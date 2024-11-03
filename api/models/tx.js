@@ -10,6 +10,13 @@ const bedrockValues = {
   'llama3-1-8b': { prompt: 0.3, completion: 0.6 },
   'llama3-1-70b': { prompt: 2.65, completion: 3.5 },
   'llama3-1-405b': { prompt: 5.32, completion: 16.0 },
+  'llama2:13b': { prompt: 0.75, completion: 1.0 },
+  'llama2:70b': { prompt: 1.95, completion: 2.56 },
+  'llama3:8b': { prompt: 0.3, completion: 0.6 },
+  'llama3:70b': { prompt: 2.65, completion: 3.5 },
+  'llama3.1:8b': { prompt: 0.3, completion: 0.6 },
+  'llama3.1:70b': { prompt: 2.65, completion: 3.5 },
+  'llama3.1:405b': { prompt: 5.32, completion: 16.0 },
   'mistral-7b': { prompt: 0.15, completion: 0.2 },
   'mistral-small': { prompt: 0.15, completion: 0.2 },
   'mixtral-8x7b': { prompt: 0.45, completion: 0.7 },
@@ -40,9 +47,9 @@ const tokenValues = Object.assign(
     'o1-preview': { prompt: 15, completion: 60 },
     'o1-mini': { prompt: 3, completion: 12 },
     o1: { prompt: 15, completion: 60 },
-    'gpt-4o-2024-08-06': { prompt: 2.5, completion: 10 },
     'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
-    'gpt-4o': { prompt: 5, completion: 15 },
+    'gpt-4o': { prompt: 2.5, completion: 10 },
+    'gpt-4o-2024-05-13': { prompt: 5, completion: 15 },
     'gpt-4-1106': { prompt: 10, completion: 30 },
     'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
     'claude-3-opus': { prompt: 15, completion: 75 },
@@ -104,8 +111,8 @@ const getValueKey = (model, endpoint) => {
     return 'o1-mini';
   } else if (modelName.includes('o1')) {
     return 'o1';
-  } else if (modelName.includes('gpt-4o-2024-08-06')) {
-    return 'gpt-4o-2024-08-06';
+  } else if (modelName.includes('gpt-4o-2024-05-13')) {
+    return 'gpt-4o-2024-05-13';
   } else if (modelName.includes('gpt-4o-mini')) {
     return 'gpt-4o-mini';
   } else if (modelName.includes('gpt-4o')) {
