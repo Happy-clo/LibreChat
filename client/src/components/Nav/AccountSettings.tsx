@@ -92,6 +92,13 @@ function AccountSettings() {
         >
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
+        <Select.SelectItem
+          value=""
+          onClick={() => window.open('https://ai.hapx.one', '_blank')}
+          className="select-item text-sm"
+        >
+          <LinkIcon aria-hidden="true" />
+          本站官网
         </Select.SelectItem>
         <Select.SelectItem
           value=""
