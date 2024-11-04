@@ -49,13 +49,9 @@ export default function Footer({ className }: { className?: string }) {
   );
 
   const mainContentParts = (
-    typeof config?.customFooter === 'string'
-      ? config.customFooter
-      : '[HappyChat ' +
-        Constants.VERSION +
-        '](https://ai.hapx.one) - ' +
-        localize('com_ui_latest_footer')
-  ).split('|');
+    (typeof config?.customFooter === 'string' ? config.customFooter : `[HappyChat v1.0.0](https://ai.hapx.one) - ${localize('com_ui_latest_footer')}`)
+    .split('|')
+  );
 
   useEffect(() => {
     if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
