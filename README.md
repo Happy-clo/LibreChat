@@ -38,6 +38,10 @@
 </a>
 </p>
 
+# About This Fork
+
+This fork is a continuation of the original LibreChat project, which was originally developed by Danny Avila. The original project was built using the Flask framework and the Hugging Face Transformers library. The current branch mainly adds some personalized features for personal websites and is open source again. The author does not assume any legal responsibility for this project.
+
 # 📃 Features
 
 - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and latest updates
