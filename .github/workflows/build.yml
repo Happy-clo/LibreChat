@@ -36,14 +36,6 @@ jobs:
           echo "::set-output name=repo_name::$(echo ${{ github.repository }} | cut -d'/' -f2)"
           echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
 
-      - name: Cache Docker layers
-        uses: actions/cache@main
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
       - name: Login to Docker Hub
         uses: docker/login-action@master
         with:
@@ -60,5 +52,3 @@ jobs:
           tags: |
             happyclo/librechat:dev
             happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache
