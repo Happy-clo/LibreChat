@@ -103,8 +103,13 @@ def recreate_container(ssh, old_container_name, new_image_url):
     # 添加镜像
     create_command += f"{new_image_url}"
 
+    # 输出创建命令以进行调试
+    print(f"Create command: {create_command}")
+
     # 创建新容器
-    ssh.exec_command(create_command)
+    stdin, stdout, stderr = ssh.exec_command(create_command)
+    print(stdout.read().decode())
+    print(stderr.read().decode())
 
 
 def main():
