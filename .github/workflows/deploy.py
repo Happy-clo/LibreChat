@@ -76,7 +76,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
     # 添加环境变量
     env_vars = config.get("Env", [])
     for env in env_vars:
-        create_command += f"-e {env} "
+        create_command += f'-e "{env}" '
 
     # 添加端口映射
     ports = container_info[0].get("NetworkSettings", {}).get("Ports", {})
