@@ -53,11 +53,6 @@ jobs:
             happyclo/librechat:dev
             happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}
 
-      - name: Get image URL
-        run: |
-          IMAGE_URL="happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}"
-          echo "IMAGE_URL=${IMAGE_URL}" >> $GITHUB_ENV
-
       - name: Set environment variables
         env:
           SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
@@ -65,11 +60,11 @@ jobs:
           PORT: ${{ secrets.PORT }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         run: |
-          echo "SERVER_ADDRESS=$(printf '%s' "${SERVER_ADDRESS}")" >> $GITHUB_ENV
-          echo "USERNAME=$(printf '%s' "${USERNAME}")" >> $GITHUB_ENV
-          echo "PORT=$(printf '%s' "${PORT}")" >> $GITHUB_ENV
-          echo "PRIVATE_KEY=$(printf '%s' "${PRIVATE_KEY}")" >> $GITHUB_ENV
-          echo "IMAGE_URL=happyclo/HappyChat:$(printf '%s' "${{ steps.timestamp.outputs.short_sha }}")" >> $GITHUB_ENV
+          echo 'SERVER_ADDRESS='"${SERVER_ADDRESS}" >> $GITHUB_ENV
+          echo 'USERNAME='"${USERNAME}" >> $GITHUB_ENV
+          echo 'PORT='"${PORT}" >> $GITHUB_ENV
+          echo 'PRIVATE_KEY='"${PRIVATE_KEY}" >> $GITHUB_ENV
+          echo 'IMAGE_URL=happyclo/librechat:'"${{ steps.timestamp.outputs.short_sha }}" >> $GITHUB_ENV
 
       - name: Set up Python 3
         uses: actions/setup-python@v5.2.0
