@@ -87,7 +87,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
         for binding in bindings:
             host_ip = binding.get("HostIp", "0.0.0.0")
             host_port = binding.get("HostPort")
-            create_command += f"-p {host_ip}:{host_port}:{port.split('/')[0]}/tcp "
+            create_command += f"-p {host_ip}:{host_port}:{port.split('/')[0]} "
 
     # 添加卷挂载
     mounts = config.get("Volumes", {})
