@@ -57,10 +57,8 @@ def recreate_container(ssh, old_container_name, new_image_url):
     new_container_name = f"{old_container_name}_old"
     ssh.exec_command(f"docker rename {old_container_name} {new_container_name}")
 
-    # 从备份中获取容器的设置
-    stdin, stdout, stderr = ssh.exec_command(
-        f"cat /root/{old_container_name}_backup.json"
-    )
+    # 直接通过命令获取容器的设置
+    stdin, stdout, stderr = ssh.exec_command(f"docker inspect {old_container_name}")
     container_info = json.loads(stdout.read().decode())
 
     # 检查 container_info 是否为空
