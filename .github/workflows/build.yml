@@ -99,6 +99,6 @@ jobs:
           USERNAME: ${{ secrets.USERNAME }}
           PORT: ${{ secrets.PORT }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-          IMAGE_URL: 'happyclo/librechat:${{ steps.prev_short_sha.outputs.prev_short_sha }}'
+          IMAGE_URL: 'happyclo/librechat:dev'
         run: |
          python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py
