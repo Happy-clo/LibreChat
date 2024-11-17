@@ -20,6 +20,11 @@ def remote_login(server_address, username, port, private_key):
 
 
 def pull_docker_image(ssh, image_url):
+    # 验证 Docker 镜像 URL 格式
+    if not image_url or ":" not in image_url:
+        print("Error: Invalid Docker image URL format")
+        return
+
     stdin, stdout, stderr = ssh.exec_command(f"docker pull {image_url}")
     print(stdout.read().decode())
     print(stderr.read().decode())
