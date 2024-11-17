@@ -60,6 +60,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
     # 直接通过命令获取容器的设置
     stdin, stdout, stderr = ssh.exec_command(f"docker inspect {old_container_name}")
     container_info = json.loads(stdout.read().decode())
+    print(container_info)
 
     # 检查 container_info 是否为空
     if not container_info:
