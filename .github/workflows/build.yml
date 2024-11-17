@@ -76,7 +76,7 @@ jobs:
           pip install paramiko python-dotenv
 
       - name: Run deployment script with current short SHA
-        if: steps.check_github_changes.outputs.github_only_changed == 'false'
+        if: env.GITHUB_ONLY_CHANGED == 'false'
         env:
           SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
           USERNAME: ${{ secrets.USERNAME }}
@@ -87,7 +87,7 @@ jobs:
          python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py
 
       - name: Run deployment script with previous short SHA
-        if: steps.check_github_changes.outputs.github_only_changed == 'true'
+        if: env.GITHUB_ONLY_CHANGED == 'true'
         env:
           SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
           USERNAME: ${{ secrets.USERNAME }}
