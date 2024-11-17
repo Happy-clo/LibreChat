@@ -141,7 +141,7 @@ def main():
         return
 
     # 拉取新的 Docker 镜像
-    pull_docker_image(ssh, image_url)
+    # pull_docker_image(ssh, image_url)
 
     # 重新创建容器
     recreate_container(ssh, container_name, image_url)
