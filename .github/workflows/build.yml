@@ -60,7 +60,7 @@ jobs:
 
       - name: Install paramiko library
         run: |
-          pip install paramiko
+          pip install paramiko python-dotenv
 
       - name: Run deployment script
         env:
