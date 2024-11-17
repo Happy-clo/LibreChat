@@ -23,7 +23,7 @@ jobs:
       # Step 2: run the sync action
       - name: Sync upstream changes
         id: sync
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
+        uses: aormsby/Fork-Sync-With-Upstream-action@main
         with:
           upstream_sync_repo: danny-avila/LibreChat
           upstream_sync_branch: main
