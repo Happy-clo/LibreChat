@@ -99,7 +99,7 @@ function AccountSettings() {
           className="select-item text-sm"
         >
           <LinkIcon aria-hidden="true" />
-          本站官网
+          本站地址
         </Select.SelectItem>
         <Select.SelectItem
           value=""
