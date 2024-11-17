@@ -36,6 +36,25 @@ jobs:
           echo "::set-output name=repo_name::$(echo ${{ github.repository }} | cut -d'/' -f2)"
           echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
 
+      - name: Get previous commit SHA
+        id: prev_commit
+        run: echo "::set-output name=prev_sha::$(git rev-parse HEAD^1)"
+
+      - name: Check if only .github folder was modified
+        id: check_github_changes
+        run: |
+          if git diff --name-only ${{ steps.prev_commit.outputs.prev_sha }} HEAD | grep -qv '^.github/'; then
+            echo "false" > .github_only_changed
+          else
+            echo "true" > .github_only_changed
+          fi
+          echo "::set-output name=github_only_changed::$(cat .github_only_changed)"
+
+      - name: Get previous short SHA
+        if: steps.check_github_changes.outputs.github_only_changed == 'true'
+        id: prev_short_sha
+        run: echo "::set-output name=short_sha::$(git rev-parse --short HEAD^1)"
+
       - name: Login to Docker Hub
         uses: docker/login-action@master
         with:
@@ -43,7 +62,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.check_github_changes.outputs.github_only_changed == 'false'
         uses: docker/build-push-action@master
         with:
           context: .
@@ -68,6 +87,6 @@ jobs:
           USERNAME: ${{ secrets.USERNAME }}
           PORT: ${{ secrets.PORT }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-          IMAGE_URL: 'happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}'
+          IMAGE_URL: 'happyclo/librechat:${{ steps.check_github_changes.outputs.github_only_changed == 'true' && steps.prev_short_sha.outputs.short_sha || steps.timestamp.outputs.short_sha }}'
         run: |
          python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py
