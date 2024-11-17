@@ -53,7 +53,7 @@ jobs:
       - name: Get previous short SHA
         if: steps.check_github_changes.outputs.github_only_changed == 'true'
         id: prev_short_sha
-        run: echo "::set-output name=short_sha::$(git rev-parse --short HEAD^1)"
+        run: echo "::set-output name=prev_short_sha::$(git rev-parse --short HEAD^1)"
 
       - name: Login to Docker Hub
         uses: docker/login-action@master
@@ -81,12 +81,24 @@ jobs:
         run: |
           pip install paramiko python-dotenv
 
-      - name: Run deployment script
+      - name: Run deployment script with current short SHA
+        if: steps.check_github_changes.outputs.github_only_changed == 'false'
         env:
           SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
           USERNAME: ${{ secrets.USERNAME }}
           PORT: ${{ secrets.PORT }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-          IMAGE_URL: 'happyclo/librechat:${{ steps.check_github_changes.outputs.github_only_changed == 'true' && steps.prev_short_sha.outputs.short_sha || steps.timestamp.outputs.short_sha }}'
+          IMAGE_URL: 'happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}'
+        run: |
+         python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py
+
+      - name: Run deployment script with previous short SHA
+        if: steps.check_github_changes.outputs.github_only_changed == 'true'
+        env:
+          SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+          USERNAME: ${{ secrets.USERNAME }}
+          PORT: ${{ secrets.PORT }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          IMAGE_URL: 'happyclo/librechat:${{ steps.prev_short_sha.outputs.prev_short_sha }}'
         run: |
          python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py
