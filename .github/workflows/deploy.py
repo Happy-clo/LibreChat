@@ -123,7 +123,7 @@ def main():
     port = int(os.getenv("PORT", 22))  # 默认端口为22
     private_key = os.getenv("PRIVATE_KEY")
     image_url = os.getenv("IMAGE_URL")
-    container_name = "freeai"
+    container_name = "freeai_old"
 
     # 确保所有必需的环境变量都已设置
     if not all([server_address, username, private_key, image_url]):
