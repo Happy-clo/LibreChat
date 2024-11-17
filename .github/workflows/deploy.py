@@ -61,7 +61,6 @@ def recreate_container(ssh, old_container_name, new_image_url):
     # 直接通过命令获取容器的设置
     stdin, stdout, stderr = ssh.exec_command(f"docker inspect {new_container_name}")
     container_info = json.loads(stdout.read().decode())
-    print(container_info)
 
     # 检查 container_info 是否为空
     if not container_info:
@@ -112,9 +111,6 @@ def recreate_container(ssh, old_container_name, new_image_url):
     # 添加镜像
     create_command += f"{new_image_url}"
 
-    # 输出创建命令以进行调试
-    print(f"Create command: {create_command}")
-
     # 创建新容器
     stdin, stdout, stderr = ssh.exec_command(create_command)
     print(stdout.read().decode())
@@ -128,7 +124,7 @@ def main():
     port = int(os.getenv("PORT", 22))  # 默认端口为22
     private_key = os.getenv("PRIVATE_KEY")
     image_url = os.getenv("IMAGE_URL")
-    container_name = "freeai"
+    container_name = "librechat"
 
     # 确保所有必需的环境变量都已设置
     if not all([server_address, username, private_key, image_url]):
