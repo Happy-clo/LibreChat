@@ -67,8 +67,9 @@ def recreate_container(ssh, old_container_name, new_image_url):
     # 添加端口映射
     ports = container_info[0].get("NetworkSettings", {}).get("Ports", {})
     for port, bindings in ports.items():
-        for binding in bindings:
-            create_command += f"-p {binding['HostPort']}:{port.split('/')[0]} "
+        if bindings:
+            for binding in bindings:
+                create_command += f"-p {binding['HostPort']}:{port.split('/')[0]} "
 
     # 添加卷挂载
     mounts = config.get("Volumes", {})
