@@ -95,14 +95,6 @@ function AccountSettings() {
         </Select.SelectItem>
         <Select.SelectItem
           value=""
-          onClick={() => window.open('https://ai.hapx.one', '_blank')}
-          className="select-item text-sm"
-        >
-          <LinkIcon aria-hidden="true" />
-          本站地址
-        </Select.SelectItem>
-        <Select.SelectItem
-          value=""
           onClick={() => setShowSettings(true)}
           className="select-item text-sm"
         >
