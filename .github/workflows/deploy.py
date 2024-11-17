@@ -58,7 +58,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
     ssh.exec_command(f"docker rename {old_container_name} {new_container_name}")
 
     # 直接通过命令获取容器的设置
-    stdin, stdout, stderr = ssh.exec_command(f"docker inspect {old_container_name}")
+    stdin, stdout, stderr = ssh.exec_command(f"docker inspect {new_container_name}")
     container_info = json.loads(stdout.read().decode())
     print(container_info)
 
@@ -124,7 +124,7 @@ def main():
     port = int(os.getenv("PORT", 22))  # 默认端口为22
     private_key = os.getenv("PRIVATE_KEY")
     image_url = os.getenv("IMAGE_URL")
-    container_name = "freeai_old"
+    container_name = "freeai"
 
     # 确保所有必需的环境变量都已设置
     if not all([server_address, username, private_key, image_url]):
