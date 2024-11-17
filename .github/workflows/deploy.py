@@ -35,6 +35,11 @@ def backup_container_settings(ssh, container_name):
     stdin, stdout, stderr = ssh.exec_command(f"docker inspect {container_name}")
     container_info = stdout.read().decode()
 
+    # 检查 container_info 是否为空
+    if not container_info:
+        print(f"Error: No container info found for {container_name}")
+        return None
+
     # 生成备份文件名
     backup_file = f"/root/{container_name}_backup.json"
 
@@ -132,9 +137,11 @@ def main():
 
     # 备份容器设置
     backup_file = backup_container_settings(ssh, container_name)
+    if not backup_file:
+        return
 
     # 拉取新的 Docker 镜像
-    # pull_docker_image(ssh, image_url)
+    pull_docker_image(ssh, image_url)
 
     # 重新创建容器
     recreate_container(ssh, container_name, image_url)
