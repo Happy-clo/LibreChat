@@ -87,8 +87,9 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
     # 添加卷挂载
     mounts = config.get("Volumes", {})
-    for mount in mounts.keys():
-        create_command += f"-v {mount}:{mount} "
+    if mounts:
+        for mount in mounts.keys():
+            create_command += f"-v {mount}:{mount} "
 
     # 添加网络设置
     networks = container_info[0].get("NetworkSettings", {}).get("Networks", {})
