@@ -49,11 +49,6 @@ jobs:
             echo "GITHUB_ONLY_CHANGED=true" >> $GITHUB_ENV
           fi
 
-      - name: Get previous short SHA
-        if: steps.check_github_changes.outputs.github_only_changed == 'true'
-        id: prev_short_sha
-        run: echo "::set-output name=prev_short_sha::$(git rev-parse --short HEAD^1)"
-
       - name: Login to Docker Hub
         uses: docker/login-action@master
         with:
