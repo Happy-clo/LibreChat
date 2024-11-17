@@ -81,10 +81,13 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
     # 添加端口映射
     ports = container_info[0].get("NetworkSettings", {}).get("Ports", {})
-    for port, bindings in ports.items():
-        if bindings:
-            for binding in bindings:
-                create_command += f"-p {binding['HostPort']}:{port.split('/')[0]} "
+    host_config = container_info[0].get("HostConfig", {})
+    port_bindings = host_config.get("PortBindings", {})
+    for port, bindings in port_bindings.items():
+        for binding in bindings:
+            host_ip = binding.get("HostIp", "0.0.0.0")
+            host_port = binding.get("HostPort")
+            create_command += f"-p {host_ip}:{host_port}:{port.split('/')[0]}/tcp "
 
     # 添加卷挂载
     mounts = config.get("Volumes", {})
