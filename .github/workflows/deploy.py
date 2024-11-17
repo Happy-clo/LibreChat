@@ -1,12 +1,15 @@
-import paramiko
 import os
+import paramiko
+from io import StringIO
 
 
 def remote_login(server_address, username, port, private_key):
+    # 使用 StringIO 来读取密钥内容
+    private_key_obj = paramiko.RSAKey.from_private_key(StringIO(private_key))
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(
-        hostname=server_address, username=username, port=port, key_filename=private_key
+        hostname=server_address, username=username, port=port, pkey=private_key_obj
     )
     return ssh
 
