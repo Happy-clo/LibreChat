@@ -2,6 +2,10 @@ import os
 import paramiko
 import json
 from io import StringIO
+from dotenv import load_dotenv
+
+# 加载本地 .env 文件中的环境变量（如果存在）
+load_dotenv()
 
 
 def remote_login(server_address, username, port, private_key):
@@ -93,12 +97,20 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
 
 def main():
-    server_address = os.environ.get("SERVER_ADDRESS")
-    username = os.environ.get("USERNAME")
-    port = int(os.environ.get("PORT"))
-    private_key = os.environ.get("PRIVATE_KEY")
-    image_url = os.environ.get("IMAGE_URL")
+    # 从环境变量中获取配置
+    server_address = os.getenv("SERVER_ADDRESS")
+    username = os.getenv("USERNAME")
+    port = int(os.getenv("PORT", 22))  # 默认端口为22
+    private_key = os.getenv("PRIVATE_KEY")
+    image_url = os.getenv("IMAGE_URL")
     container_name = "freeai"
+
+    # 确保所有必需的环境变量都已设置
+    if not all([server_address, username, private_key, image_url]):
+        print(
+            "请确保 SERVER_ADDRESS, USERNAME, PRIVATE_KEY 和 IMAGE_URL 环境变量已设置。"
+        )
+        return
 
     ssh = remote_login(server_address, username, port, private_key)
 
