@@ -53,6 +53,11 @@ def recreate_container(ssh, old_container_name, new_image_url):
     )
     container_info = json.loads(stdout.read().decode())
 
+    # 检查 container_info 是否为空
+    if not container_info:
+        print(f"Error: No container info found for {old_container_name}")
+        return
+
     # 提取必要的参数
     config = container_info[0]["Config"]
 
