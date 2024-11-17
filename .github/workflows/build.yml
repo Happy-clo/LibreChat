@@ -43,7 +43,7 @@ jobs:
       - name: Check if only .github folder was modified
         id: check_github_changes
         run: |
-          if git diff --name-only HEAD^ HEAD | grep -qv '^.github/'; then
+          if git diff --name-only HEAD~1 HEAD -- | grep -qv '^.github/'; then
             echo "GITHUB_ONLY_CHANGED=false" >> $GITHUB_ENV
           else
             echo "GITHUB_ONLY_CHANGED=true" >> $GITHUB_ENV
