@@ -56,7 +56,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        if: github.event_name != 'pull_request' && steps.check_github_changes.outputs.github_only_changed == 'false'
+        if: github.event_name != 'pull_request' && env.GITHUB_ONLY_CHANGED == 'false'
         uses: docker/build-push-action@master
         with:
           context: .
