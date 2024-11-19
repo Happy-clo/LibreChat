@@ -118,9 +118,7 @@ def main():
     port = int(os.getenv("PORT", 22))
     private_key = os.getenv("PRIVATE_KEY")
     image_url = os.getenv("IMAGE_URL")
-    container_names = os.getenv("CONTAINER_NAMES", "HappyChat").split(
-        "&"
-    )  # 支持多个容器名称
+    container_names = os.getenv("CONTAINER_NAMES").split("&")  # 支持多个容器名称
 
     if not all([server_address, username, private_key, image_url]):
         print(
