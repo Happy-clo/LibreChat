@@ -28,6 +28,7 @@ jobs:
         run: |
           sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
           sudo dpkg-reconfigure -f noninteractive tzdata
+          npm i --save-dev @types/node
 
       - name: Get timestamp and short SHA
         id: timestamp
