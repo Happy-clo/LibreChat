@@ -61,7 +61,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
     # 重命名旧容器
     ssh.exec_command(f"docker rename {old_container_name} {new_container_name}")
-    ssh.exec_command(f"docker stop {new_container_name}")
+    ssh.exec_command(f"docker rm {new_container_name}")
 
     # 直接通过命令获取容器的设置
     stdin, stdout, stderr = ssh.exec_command(f"docker inspect {new_container_name}")
