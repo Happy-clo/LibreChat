@@ -104,6 +104,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
                 f"--restart-max-retries {restart_policy['MaximumRetryCount']} "
             )
 
+    time.sleep(5)  # 等待容器停止
     create_command += f"{new_image_url}"
 
     # 创建新容器
