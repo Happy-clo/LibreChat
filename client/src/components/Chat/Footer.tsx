@@ -50,6 +50,8 @@ export default function Footer({ className }: { className?: string }) {
 
   
   const mainContentParts = (
+    (typeof config?.customFooter === 'string' ? config.customFooter : `[HappyChat v1.0.0](https://github.com/Happy-clo/LibreChat/tree/main?tab=readme-ov-file#about-this-fork) - ${localize('com_ui_latest_footer')}`)
+    .split('|')
   );
 
   useEffect(() => {
