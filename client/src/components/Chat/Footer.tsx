@@ -48,9 +48,9 @@ export default function Footer({ className }: { className?: string }) {
     </a>
   );
 
+  const commitId = process.env.COMMIT_ID || 'unknown'; // Define commitId or get it from your source
   const mainContentParts = (
-    (typeof config?.customFooter === 'string' ? config.customFooter : `[HappyChat v1.0.0](https://github.com/Happy-clo/LibreChat/tree/main?tab=readme-ov-file#about-this-fork) - ${localize('com_ui_latest_footer')}`)
-    .split('|')
+    (typeof config?.customFooter === 'string' ? config.customFooter : `[HappyChat v1.0.0 (${commitId})](https://github.com/Happy-clo/LibreChat/tree/main?tab=readme-ov-file#about-this-fork) - ${localize('com_ui_latest_footer')}`)
   );
 
   useEffect(() => {
