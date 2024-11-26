@@ -59,12 +59,8 @@ def recreate_container(ssh, old_container_name, new_image_url):
     while new_container_name in existing_containers:
         new_container_name += "_old"
 
-    # 重命名旧容器
-    ssh.exec_command(f"docker rename {old_container_name} {new_container_name}")
-    ssh.exec_command(f"docker rm {new_container_name}")
-
     # 直接通过命令获取容器的设置
-    stdin, stdout, stderr = ssh.exec_command(f"docker inspect {new_container_name}")
+    stdin, stdout, stderr = ssh.exec_command(f"docker inspect {old_container_name}")
     container_info = json.loads(stdout.read().decode())
 
     if not container_info:
@@ -72,6 +68,11 @@ def recreate_container(ssh, old_container_name, new_image_url):
         return
 
     config = container_info[0]["Config"]
+
+    # 检查旧容器是否存在，如果存在则删除
+    if new_container_name in existing_containers:
+        print(f"旧容器 {new_container_name} 存在，正在删除...")
+        ssh.exec_command(f"docker rm -f {new_container_name}")
 
     create_command = f"docker run -d --name {old_container_name} "
 
