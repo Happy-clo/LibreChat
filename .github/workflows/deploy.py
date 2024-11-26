@@ -21,7 +21,7 @@ def remote_login(server_address, username, port, private_key):
 
 def pull_docker_image(ssh, image_url):
     if not image_url or ":" not in image_url:
-        print("Error: Invalid Docker image URL format")
+        print("错误：无效的 Docker 镜像 URL 格式")
         return
 
     stdin, stdout, stderr = ssh.exec_command(f"docker pull {image_url}")
@@ -34,7 +34,7 @@ def backup_container_settings(ssh, container_name):
     container_info = stdout.read().decode()
 
     if not container_info:
-        print(f"Error: No container info found for {container_name}")
+        print(f"错误：未找到容器 {container_name} 的信息")
         return None
 
     backup_file = f"/root/{container_name}_backup.json"
@@ -43,7 +43,7 @@ def backup_container_settings(ssh, container_name):
         with sftp.file(backup_file, "w") as f:
             f.write(container_info)
 
-    print(f"Container settings backed up to: {backup_file}")
+    print(f"容器设置已备份到：{backup_file}")
     return backup_file
 
 
@@ -68,7 +68,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
     container_info = json.loads(stdout.read().decode())
 
     if not container_info:
-        print(f"Error: No container info found for {old_container_name}")
+        print(f"错误：未找到容器 {old_container_name} 的信息")
         return
 
     config = container_info[0]["Config"]
@@ -132,7 +132,7 @@ def main():
 
     for container_name in container_names:
         container_name = container_name.strip()  # 去除多余空格
-        print(f"Processing container: {container_name}")
+        print(f"正在处理容器：{container_name}")
 
         backup_file = backup_container_settings(ssh, container_name)
         if not backup_file:
