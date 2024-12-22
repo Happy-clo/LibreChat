@@ -1,0 +1,44 @@
+name: Deploy Docker Image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set timezone to Shanghai
+        run: |
+          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          sudo dpkg-reconfigure -f noninteractive tzdata
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v5.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Install paramiko library
+        run: |
+          pip install paramiko python-dotenv requests
+
+      - name: Get timestamp and short SHA
+        id: timestamp
+        run: |
+          echo "::set-output name=timestamp::$(TZ='Asia/Shanghai' date +%s)"
+          echo "::set-output name=repo_name::$(echo ${{ github.repository }} | cut -d'/' -f2)"
+          echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+          
+      - name: Run deployment script
+        env:
+          SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+          USERNAME: ${{ secrets.USERNAME }}
+          PORT: ${{ secrets.PORT }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          CONTAINER_NAMES: ${{ secrets.CONTAINER_NAMES }}
+        run: |
+          python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py

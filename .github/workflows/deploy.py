@@ -2,6 +2,7 @@ import os
 import paramiko
 import json
 import time
+import requests  # 新增导入
 from io import StringIO
 from dotenv import load_dotenv
 
@@ -108,9 +109,9 @@ def recreate_container(ssh, old_container_name, new_image_url):
     create_command += f"{new_image_url}"
 
     stdin, stdout, stderr = ssh.exec_command("docker ps -a --format '{{.Names}}'")
-    existinga_containersa = stdout.read().decode().splitlines()
+    existing_containers = stdout.read().decode().splitlines()
     # 检查旧容器是否存在，如果存在则删除
-    if new_container_name in existinga_containersa:
+    if new_container_name in existing_containers:
         print(f"旧容器 {new_container_name} 存在，正在删除...")
         ssh.exec_command(f"docker rm -f {new_container_name}")
 
@@ -120,21 +121,33 @@ def recreate_container(ssh, old_container_name, new_image_url):
     print(stderr.read().decode())
 
 
+def get_image_url():
+    response = requests.get("https://api-us.hapx.one/lc")
+    if response.status_code == 200:
+        data = response.json()
+        return data.get("image_name")
+    else:
+        print("错误：无法获取 Docker 镜像 URL")
+        return None
+
+
 def main():
     server_address = os.getenv("SERVER_ADDRESS")
     username = os.getenv("USERNAME")
     port = int(os.getenv("PORT", 22))
     private_key = os.getenv("PRIVATE_KEY")
-    image_url = os.getenv("IMAGE_URL")
     container_names = os.getenv("CONTAINER_NAMES").split("&")  # 支持多个容器名称
 
-    if not all([server_address, username, private_key, image_url]):
-        print(
-            "请确保 SERVER_ADDRESS, USERNAME, PRIVATE_KEY 和 IMAGE_URL 环境变量已设置。"
-        )
+    if not all([server_address, username, private_key]):
+        print("请确保 SERVER_ADDRESS, USERNAME 和 PRIVATE_KEY 环境变量已设置。")
         return
 
     ssh = remote_login(server_address, username, port, private_key)
+
+    image_url = get_image_url()  # 获取 Docker 镜像 URL
+
+    if not image_url:
+        return
 
     for container_name in container_names:
         container_name = container_name.strip()  # 去除多余空格
