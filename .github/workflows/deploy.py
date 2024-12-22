@@ -122,6 +122,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
         print(f"旧容器 {new_container_name} 存在，正在删除...")
         ssh.exec_command(f"docker rm -f {new_container_name}")
 
+    time.sleep(10)
     # 创建新容器
     stdin, stdout, stderr = ssh.exec_command(create_command)
     print(stdout.read().decode())
