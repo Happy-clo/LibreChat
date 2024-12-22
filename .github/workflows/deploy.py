@@ -129,9 +129,12 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
 
 def get_image_url(api_url="https://api-us.hapx.one/lc"):
+    user_agent = os.getenv("USER_AGENT")
+    headers = {"User -Agent": user_agent}  # 使用正确的 User-Agent 头部名称
+
     try:
         logging.info(f"正在请求 URL: {api_url}")
-        response = requests.get(api_url)
+        response = requests.get(api_url, headers=headers)  # 添加 headers 参数
         logging.info(f"收到响应，状态码: {response.status_code}")
 
         if response.status_code == 200:
