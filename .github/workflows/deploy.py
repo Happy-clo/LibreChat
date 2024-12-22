@@ -5,6 +5,13 @@ import time
 import requests  # 新增导入
 from io import StringIO
 from dotenv import load_dotenv
+import logging
+
+# 配置日志记录
+logging.basicConfig(
+    level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 # 加载本地 .env 文件中的环境变量（如果存在）
 load_dotenv()
@@ -121,13 +128,35 @@ def recreate_container(ssh, old_container_name, new_image_url):
     print(stderr.read().decode())
 
 
-def get_image_url():
-    response = requests.get("https://api-us.hapx.one/lc")
-    if response.status_code == 200:
-        data = response.json()
-        return data.get("image_name")
-    else:
-        print("错误：无法获取 Docker 镜像 URL")
+def get_image_url(api_url="https://api-us.hapx.one/lc"):
+    try:
+        logging.info(f"正在请求 URL: {api_url}")
+        response = requests.get(api_url)
+        logging.info(f"收到响应，状态码: {response.status_code}")
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                logging.info(f"解析的 JSON 数据: {data}")
+                image_name = data.get("image_name")
+                if image_name is not None:
+                    logging.info(f"找到的 image_name: {image_name}")
+                    return image_name
+                else:
+                    logging.error("错误：响应中未找到 'image_name' 字段")
+                    return None
+            except ValueError as e:
+                logging.error(f"错误：无法解析 JSON 响应: {e}")
+                logging.error(f"响应内容: {response.text}")
+                return None
+        else:
+            logging.error(
+                f"错误：无法获取 Docker 镜像 URL，状态码: {response.status_code}"
+            )
+            logging.error(f"响应内容: {response.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"错误：网络请求失败: {e}")
         return None
 
 

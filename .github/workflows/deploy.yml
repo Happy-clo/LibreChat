@@ -24,7 +24,7 @@ jobs:
 
       - name: Install paramiko library
         run: |
-          pip install paramiko python-dotenv requests
+          pip install paramiko python-dotenv requests logging
 
       - name: Get timestamp and short SHA
         id: timestamp
@@ -32,7 +32,7 @@ jobs:
           echo "::set-output name=timestamp::$(TZ='Asia/Shanghai' date +%s)"
           echo "::set-output name=repo_name::$(echo ${{ github.repository }} | cut -d'/' -f2)"
           echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
-          
+
       - name: Run deployment script
         env:
           SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
