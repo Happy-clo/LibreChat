@@ -124,6 +124,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
     time.sleep(10)
     # 创建新容器
+    logging.info(f"已休眠10s，正在创建新容器")
     stdin, stdout, stderr = ssh.exec_command(create_command)
     print(stdout.read().decode())
     print(stderr.read().decode())
