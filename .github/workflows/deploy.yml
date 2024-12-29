@@ -1,6 +1,7 @@
 name: Deploy Docker Image
 
 on:
+  push:
   schedule:
     - cron: '0 16 * * *'  # 每天的 UTC 时间 16:00（即上海时间的 00:00）
 
