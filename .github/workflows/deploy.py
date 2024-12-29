@@ -164,35 +164,37 @@ def get_image_url(api_url="https://api-us.hapx.one/lc"):
         return None
 
 
+def cleanup_unused_images(ssh):
+    print("正在清理未使用的 Docker 镜像...")
+    stdin, stdout, stderr = ssh.exec_command("docker image prune -f")
+    print(stdout.read().decode())
+    print(stderr.read().decode())
+
+
 def main():
     server_address = os.getenv("SERVER_ADDRESS")
     username = os.getenv("USERNAME")
     port = int(os.getenv("PORT", 22))
     private_key = os.getenv("PRIVATE_KEY")
     container_names = os.getenv("CONTAINER_NAMES").split("&")  # 支持多个容器名称
-
     if not all([server_address, username, private_key]):
         print("请确保 SERVER_ADDRESS, USERNAME 和 PRIVATE_KEY 环境变量已设置。")
         return
-
     ssh = remote_login(server_address, username, port, private_key)
-
     image_url = get_image_url()  # 获取 Docker 镜像 URL
-
     if not image_url:
         return
-
     for container_name in container_names:
         container_name = container_name.strip()  # 去除多余空格
         print(f"正在处理容器：{container_name}")
-
         backup_file = backup_container_settings(ssh, container_name)
         if not backup_file:
             continue
-
         pull_docker_image(ssh, image_url)
-
         recreate_container(ssh, container_name, image_url)
+
+    # 清理未使用的 Docker 镜像
+    cleanup_unused_images(ssh)
 
     ssh.close()
 
