@@ -130,38 +130,43 @@ def recreate_container(ssh, old_container_name, new_image_url):
     print(stderr.read().decode())
 
 
-def get_image_url(api_url="https://api-us.hapx.one/lc"):
+def get_image_url(ssh, api_url="https://api-us.hapx.one/lc"):
     user_agent = os.getenv("USER_AGENT")
-    headers = {"User-Agent": user_agent}  # 使用正确的 User-Agent 头部名称
+    # 构造远程命令
+    remote_command = f"""
+    python3 -c "
+import requests, os, json
+user_agent = '{user_agent}'
+headers = {{'User-Agent': user_agent}}
+response = requests.get('{api_url}', headers=headers)
+if response.status_code == 200:
+    data = response.json()
+    print(json.dumps(data))
+else:
+    print('错误：无法获取 Docker 镜像 URL，状态码: ' + str(response.status_code))
+"
+    """
+
+    stdin, stdout, stderr = ssh.exec_command(remote_command)
+    response_json = stdout.read().decode().strip()
+    error_message = stderr.read().decode().strip()
+
+    if error_message:
+        logging.error(f"错误：{error_message}")
+        return None
 
     try:
-        logging.info(f"正在请求 URL: {api_url}")
-        response = requests.get(api_url, headers=headers)  # 添加 headers 参数
-        logging.info(f"收到响应，状态码: {response.status_code}")
-
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                logging.info(f"解析的 JSON 数据: {data}")
-                image_name = data.get("image_name")
-                if image_name is not None:
-                    logging.info(f"找到的 image_name: {image_name}")
-                    return image_name
-                else:
-                    logging.error("错误：响应中未找到 'image_name' 字段")
-                    return None
-            except ValueError as e:
-                logging.error(f"错误：无法解析 JSON 响应: {e}")
-                logging.error(f"响应内容: {response.text}")
-                return None
+        data = json.loads(response_json)
+        image_name = data.get("image_name")
+        if image_name is not None:
+            logging.info(f"找到的 image_name: {image_name}")
+            return image_name
         else:
-            logging.error(
-                f"错误：无法获取 Docker 镜像 URL，状态码: {response.status_code}"
-            )
-            logging.error(f"响应内容: {response.text}")
+            logging.error("错误：响应中未找到 'image_name' 字段")
             return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"错误：网络请求失败: {e}")
+    except ValueError as e:
+        logging.error(f"错误：无法解析 JSON 响应: {e}")
+        logging.error(f"响应内容: {response_json}")
         return None
 
 
@@ -182,7 +187,7 @@ def main():
         print("请确保 SERVER_ADDRESS, USERNAME 和 PRIVATE_KEY 环境变量已设置。")
         return
     ssh = remote_login(server_address, username, port, private_key)
-    image_url = get_image_url()  # 获取 Docker 镜像 URL
+    image_url = get_image_url(ssh)  # 获取 Docker 镜像 URL
     if not image_url:
         return
     for container_name in container_names:
