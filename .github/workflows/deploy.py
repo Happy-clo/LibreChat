@@ -172,7 +172,7 @@ else:
 
 def cleanup_unused_images(ssh):
     print("正在清理未使用的 Docker 镜像...")
-    stdin, stdout, stderr = ssh.exec_command("docker image prune -a")
+    stdin, stdout, stderr = ssh.exec_command("docker image prune -a -f")
     print(stdout.read().decode())
     print(stderr.read().decode())
 
