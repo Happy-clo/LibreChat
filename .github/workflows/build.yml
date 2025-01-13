@@ -1,9 +1,10 @@
-name: Build Docker Image Release
+name: Build Docker Image
 
 on:
   push:
     branches:
-      - main1
+      - main
+      - dev
 
 jobs:
   docker:
@@ -62,37 +63,5 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            happyclo/librechat:dev
+            happyclo/librechat:${{ github.ref_name }}
             happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}
-
-      - name: Set up Python 3
-        uses: actions/setup-python@v5.2.0
-        with:
-          python-version: "3.13"
-
-      - name: Install paramiko library
-        run: |
-          pip install paramiko python-dotenv
-
-      - name: Run deployment script with current short SHA
-        if: env.GITHUB_ONLY_CHANGED == 'false'
-        env:
-          SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
-          USERNAME: ${{ secrets.USERNAME }}
-          PORT: ${{ secrets.PORT }}
-          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-          IMAGE_URL: 'happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}'
-        run: |
-         python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py
-
-      - name: Run deployment script with previous short SHA
-        if: env.GITHUB_ONLY_CHANGED == 'true'
-        env:
-          SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
-          USERNAME: ${{ secrets.USERNAME }}
-          PORT: ${{ secrets.PORT }}
-          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-          CONTAINER_NAMES: ${{ secrets.CONTAINER_NAMES }}
-          IMAGE_URL: 'happyclo/librechat:dev'
-        run: |
-         python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy.py
