@@ -132,13 +132,14 @@ def get_image_url(ssh, api_url="https://api-us.hapx.one/lc"):
     python3 -c "
 import requests, os, json
 user_agent = '{user_agent}'
-headers = {{'User -Agent': user_agent}}
+headers = {{'User  -Agent': user_agent}}
 response = requests.get('{api_url}', headers=headers)
 if response.status_code == 200:
     data = response.json()
     print(json.dumps(data))
 else:
     print('错误：无法获取 Docker 镜像 URL，状态码: ' + str(response.status_code))
+    print('响应内容: ' + response.text)  # 打印响应内容
 "
     """
     stdin, stdout, stderr = ssh.exec_command(remote_command)
