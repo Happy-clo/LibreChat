@@ -220,7 +220,7 @@ def get_image_url(ssh, api_url="https://api-us.hapx.one/lc"):
     python3 -c "
 import requests, os, json
 user_agent = '{user_agent}'  # 将用户代理传递给请求 / Pass user agent to the request
-headers = {{'User -Agent': user_agent}}
+headers = {{'User-Agent': user_agent}}
 response = requests.get('{api_url}', headers=headers)  # 发送 GET 请求 / Send GET request
 if response.status_code == 200:
     data = response.json()  # 解析 JSON 响应 / Parse JSON response
