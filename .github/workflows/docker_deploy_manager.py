@@ -10,7 +10,7 @@ import logging
 # 配置日志记录
 # Configure logging
 logging.basicConfig(
-    level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 # 加载本地 .env 文件中的环境变量（如果存在）
@@ -51,15 +51,17 @@ def pull_docker_image(ssh, image_url):
     :param image_url: Docker 镜像 URL / Docker image URL
     """
     if not image_url or ":" not in image_url:
-        print(
+        logging.error(
             "错误：无效的 Docker 镜像 URL 格式"
         )  # Error: Invalid Docker image URL format
         return  # 如果图像 URL 无效，返回 / Return if the image URL is invalid
 
     # 执行拉取命令并获取输出 / Execute the pull command and get the output
     stdin, stdout, stderr = ssh.exec_command(f"docker pull {image_url}")
-    print(stdout.read().decode())  # 打印标准输出 / Print standard output
-    print(stderr.read().decode())  # 打印标准错误输出 / Print standard error output
+    logging.info(stdout.read().decode())  # 打印标准输出 / Print standard output
+    logging.error(
+        stderr.read().decode()
+    )  # 打印标准错误输出 / Print standard error output
 
 
 def backup_container_settings(ssh, container_name):
@@ -77,7 +79,7 @@ def backup_container_settings(ssh, container_name):
 
     # 如果未找到容器信息，则返回 None / Return None if container information is not found
     if not container_info:
-        print(
+        logging.error(
             f"错误：未找到容器 {container_name} 的信息"
         )  # Error: Could not find information for container
         return None
@@ -88,7 +90,7 @@ def backup_container_settings(ssh, container_name):
     with ssh.open_sftp() as sftp:  # 使用 SFTP 进行文件传输 / Use SFTP for file transfer
         with sftp.file(backup_file, "w") as f:
             f.write(container_info)  # 写入容器信息 / Write container information
-    print(
+    logging.info(
         f"容器设置已备份到：{backup_file}"
     )  # Container settings have been backed up to
     return backup_file
@@ -132,7 +134,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
     # 如果未找到容器信息，直接返回 / Return directly if container information is not found
     if not container_info:
-        print(
+        logging.error(
             f"错误：未找到容器 {old_container_name} 的信息"
         )  # Error: Could not find information for container
         return
@@ -186,7 +188,7 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
     # 检查旧容器是否存在，如果存在则删除 / Check if the old container exists, if so, delete it
     if new_container_name in existing_containers:
-        print(
+        logging.info(
             f"旧容器 {new_container_name} 存在，正在删除..."
         )  # Old container exists, deleting...
         ssh.exec_command(
@@ -195,13 +197,15 @@ def recreate_container(ssh, old_container_name, new_image_url):
 
     time.sleep(10)  # 等待一段时间 / Wait for a while
     logging.info(
-        f"已休眠10s，正在创建新容器"
+        "已休眠10s，正在创建新容器"
     )  # Logged: Sleeping for 10 seconds, creating new container
     stdin, stdout, stderr = ssh.exec_command(
         create_command
     )  # 创建新容器 / Create new container
-    print(stdout.read().decode())  # 打印标准输出 / Print standard output
-    print(stderr.read().decode())  # 打印标准错误输出 / Print standard error output
+    logging.info(stdout.read().decode())  # 打印标准输出 / Print standard output
+    logging.error(
+        stderr.read().decode()
+    )  # 打印标准错误输出 / Print standard error output
 
 
 def get_image_url(ssh, api_url="https://api-us.hapx.one/lc"):
@@ -277,12 +281,16 @@ def cleanup_unused_images(ssh):
 
     :param ssh: SSHClient 对象 / SSHClient object
     """
-    print("正在清理未使用的 Docker 镜像...")  # Cleaning up unused Docker images...
+    logging.info(
+        "正在清理未使用的 Docker 镜像..."
+    )  # Cleaning up unused Docker images...
     stdin, stdout, stderr = ssh.exec_command(
         "docker image prune -a -f"
     )  # 执行清理命令 / Execute cleanup command
-    print(stdout.read().decode())  # 打印标准输出 / Print standard output
-    print(stderr.read().decode())  # 打印标准错误输出 / Print standard error output
+    logging.info(stdout.read().decode())  # 打印标准输出 / Print standard output
+    logging.error(
+        stderr.read().decode()
+    )  # 打印标准错误输出 / Print standard error output
 
 
 def main():
@@ -301,7 +309,7 @@ def main():
 
     # 检查必要的环境变量 / Check necessary environment variables
     if not all([server_address, username, private_key]):
-        print(
+        logging.error(
             "请确保 SERVER_ADDRESS, USERNAME 和 PRIVATE_KEY 环境变量已设置。"
         )  # Please ensure SERVER_ADDRESS, USERNAME, and PRIVATE_KEY environment variables are set.
         return
@@ -317,7 +325,7 @@ def main():
     # 遍历每个容器名称 / Iterate over each container name
     for container_name in container_names:
         container_name = container_name.strip()  # 去除多余空格 / Remove extra spaces
-        print(
+        logging.info(
             f"正在处理容器：{container_name}"
         )  # Processing container: {container_name}
         backup_file = backup_container_settings(
