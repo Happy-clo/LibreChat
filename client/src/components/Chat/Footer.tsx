@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TagManager from 'react-gtm-module';
+import Constants from './Constants';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
@@ -12,12 +13,26 @@ export default function Footer({ className }: { className?: string }) {
   const privacyPolicy = config?.interface?.privacyPolicy;
   const termsOfService = config?.interface?.termsOfService;
 
+  const logDeviceInfo = () => {
+    const userAgent = navigator.userAgent;
+    const platform = navigator.platform;
+    const deviceInfo = {
+      userAgent,
+      platform,
+    };
+    console.log('Device Info:', deviceInfo);
+  };
+
+  const handleLinkClick = (url: string) => {
+    logDeviceInfo();
+    window.open(url, '_blank', 'noreferrer');
+  };
+
   const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
     <a
       className="text-text-secondary underline"
-      href={privacyPolicy.externalUrl}
-      target={privacyPolicy.openNewTab === true ? '_blank' : undefined}
-      rel="noreferrer"
+      href="#"
+      onClick={() => handleLinkClick(privacyPolicy.externalUrl)}
     >
       {localize('com_ui_privacy_policy')}
     </a>
@@ -26,22 +41,18 @@ export default function Footer({ className }: { className?: string }) {
   const termsOfServiceRender = termsOfService?.externalUrl != null && (
     <a
       className="text-text-secondary underline"
-      href={termsOfService.externalUrl}
-      target={termsOfService.openNewTab === true ? '_blank' : undefined}
-      rel="noreferrer"
+      href="#"
+      onClick={() => handleLinkClick(termsOfService.externalUrl)}
     >
       {localize('com_ui_terms_of_service')}
     </a>
   );
 
+  
   const mainContentParts = (
-    typeof config?.customFooter === 'string'
-      ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
-  ).split('|');
+    (typeof config?.customFooter === 'string' ? config.customFooter : `[HappyChat v1.0.0](https://github.com/Happy-clo/LibreChat/tree/main?tab=readme-ov-file#about-this-fork) - ${localize('com_ui_latest_footer')}`)
+    .split('|')
+  );
 
   useEffect(() => {
     if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
@@ -56,21 +67,18 @@ export default function Footer({ className }: { className?: string }) {
     <React.Fragment key={`main-content-part-${index}`}>
       <ReactMarkdown
         components={{
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           a: ({ node: _n, href, children, ...otherProps }) => {
             return (
               <a
                 className="text-text-secondary underline"
-                href={href}
-                target="_blank"
-                rel="noreferrer"
+                href="#"
+                onClick={() => handleLinkClick(href)}
                 {...otherProps}
               >
                 {children}
               </a>
             );
           },
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           p: ({ node: _n, ...props }) => <span {...props} />,
         }}
       >
@@ -104,4 +112,4 @@ export default function Footer({ className }: { className?: string }) {
       })}
     </div>
   );
-}
+};
