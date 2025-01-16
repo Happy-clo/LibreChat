@@ -252,7 +252,7 @@ def main():
     ssh = remote_login(
         server_address, username, port, private_key
     )  # 远程登录 / Remote login
-    image_url = get_image_url(ssh)  # 获取 Docker 镜像 URL / Get Docker image URL
+    image_url = os.getenv("IMAGE_URL")  # 获取 Docker 镜像 URL / Get Docker image URL
 
     if not image_url:
         return  # 如果未获取到镜像 URL，结束程序 / If no image URL is obtained, end the program
