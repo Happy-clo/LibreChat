@@ -65,3 +65,31 @@ jobs:
           tags: |
             happyclo/librechat:${{ github.ref_name }}
             happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}
+      
+      - name: Set up Python 3
+        uses: actions/setup-python@main
+        with:
+          python-version: "3.13"
+
+      - name: Cache Python packages
+        uses: actions/cache@main
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install paramiko library
+        run: |
+          pip install paramiko python-dotenv requests logging
+
+      - name: Run deployment script
+        env:
+          SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+          USERNAME: ${{ secrets.USERNAME }}
+          PORT: ${{ secrets.PORT }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          CONTAINER_NAMES: ${{ secrets.CONTAINER_NAMES }}
+          IMAGE_URL: happyclo/librechat:${{ steps.timestamp.outputs.short_sha }}
+        run: |
+          python /home/runner/work/${{ steps.timestamp.outputs.repo_name }}/${{ steps.timestamp.outputs.repo_name }}/.github/workflows/deploy_image.py

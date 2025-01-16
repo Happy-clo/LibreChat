@@ -1,4 +1,4 @@
-name: Deploy Docker Image
+name: Deploy Origin Docker Image
 
 on:
   schedule:
