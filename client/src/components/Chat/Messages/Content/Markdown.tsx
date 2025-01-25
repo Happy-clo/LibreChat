@@ -17,6 +17,7 @@ import {
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import Thinking from '~/components/Artifacts/Thinking';
 import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -156,13 +157,13 @@ type TContentProps = {
 
 const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
-  const codeArtifacts = useRecoilValue<boolean>(store.codeArtifacts);
 
   const isInitializing = content === '';
 
   let currentContent = content;
   if (!isInitializing) {
-    currentContent = currentContent.replace('z-index: 1;', '') || '';
+    currentContent = currentContent.replace('<think>', ':::thinking') || '';
+    currentContent = currentContent.replace('</think>', ':::') || '';
     currentContent = LaTeXParsing ? preprocessLaTeX(currentContent) : currentContent;
   }
 
@@ -188,15 +189,13 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
     );
   }
 
-  const remarkPlugins: Pluggable[] = codeArtifacts
-    ? [
-      supersub,
-      remarkGfm,
-      [remarkMath, { singleDollarTextMath: true }],
-      remarkDirective,
-      artifactPlugin,
-    ]
-    : [supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]];
+  const remarkPlugins: Pluggable[] = [
+    supersub,
+    remarkGfm,
+    remarkDirective,
+    artifactPlugin,
+    [remarkMath, { singleDollarTextMath: true }],
+  ];
 
   return (
     <ArtifactProvider>
@@ -213,6 +212,7 @@ const Markdown = memo(({ content = '', showCursor, isLatestMessage }: TContentPr
               a,
               p,
               artifact: Artifact,
+              thinking: Thinking,
             } as {
               [nodeType: string]: React.ElementType;
             }
