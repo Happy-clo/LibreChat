@@ -1286,6 +1286,8 @@ ${convo}
       ) {
         delete modelOptions.stream;
         delete modelOptions.stop;
+      } else if (!this.isO1Model && modelOptions.reasoning_effort != null) {
+        delete modelOptions.reasoning_effort;
       }
 
       let reasoningKey = 'reasoning_content';
@@ -1362,6 +1364,14 @@ ${convo}
         }
 
         for await (const chunk of stream) {
+          // Add finish_reason: null if missing in any choice
+          if (chunk.choices) {
+            chunk.choices.forEach(choice => {
+              if (!('finish_reason' in choice)) {
+                choice.finish_reason = null;
+              }
+            });
+          }
           this.streamHandler.handle(chunk);
           if (abortController.signal.aborted) {
             stream.controller.abort();
@@ -1462,7 +1472,11 @@ ${convo}
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
         logger.error('[OpenAIClient] Known OpenAI error:', err);
-        return intermediateReply.join('');
+        if (intermediateReply.length > 0) {
+          return intermediateReply.join('');
+        } else {
+          throw err;
+        }
       } else if (err instanceof OpenAI.APIError) {
         if (intermediateReply.length > 0) {
           return intermediateReply.join('');
