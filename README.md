@@ -171,6 +171,8 @@ LibreChat 将助理 AI 的未来与 OpenAI 的 ChatGPT 革命性技术结合在�
 
 对于新功能、组件或扩展，请在发送 Pull Request 之前先打开一个问题进行讨论。
 
+If you'd like to help translate LibreChat into your language, we'd love your contribution! Improving our translations not only makes LibreChat more accessible to users around the world but also enhances the overall user experience. Please check out our [Translation Guide](https://www.librechat.ai/docs/translation).
+
 ---
 
 ## 💖 本项目能以现有状态存在，得益于所有贡献者
@@ -178,3 +180,15 @@ LibreChat 将助理 AI 的未来与 OpenAI 的 ChatGPT 革命性技术结合在�
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
 </a>
+
+---
+
+## 🎉 Special Thanks
+
+We thank [Locize](https://locize.com) for their translation management tools that support multiple languages in LibreChat.
+
+<p align="center">
+  <a href="https://locize.com" target="_blank" rel="noopener noreferrer">
+    <img src="https://locize.com/img/locize_color.svg" alt="Locize Logo" height="50">
+  </a>
+</p>
