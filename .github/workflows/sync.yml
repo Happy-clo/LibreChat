@@ -4,9 +4,18 @@ permissions:
   contents: write
 
 on:
-  schedule:
-    - cron: "0 0 * * *"
+  push:
+    branches:
+      - main
+      - dev
+    paths-ignore:
+      - .github/**
+  workflow_run:
+    workflows: ["Upstream Sync"]  # 监听 Upstream Sync 工作流
+    types:
+      - completed  # 仅在工作流完成时触发
   workflow_dispatch:
+
 
 jobs:
   sync_latest_from_upstream:
