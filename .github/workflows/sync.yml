@@ -11,7 +11,9 @@ on:
     paths-ignore:
       - .github/**
   workflow_dispatch:
-
+  schedule:
+    # 在每天的UTC凌晨0点（上海时间早上8点）执行
+    - cron: '0 0 * * *'
 
 jobs:
   sync_latest_from_upstream:
@@ -21,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout target repo
-        uses: actions/checkout@main
+        uses: actions/checkout@v2  # 使用 v2 版本
 
       - name: Sync upstream changes
         id: sync
