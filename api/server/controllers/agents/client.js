@@ -7,52 +7,77 @@
 // validateVisionModel,
 // mapModelToAzureConfig,
 // } = require('librechat-data-provider');
-const { Callback, createMetadataAggregator } = require('@librechat/agents');
+require('events').EventEmitter.defaultMaxListeners = 100;
+const {
+  Callback,
+  GraphEvents,
+  formatMessage,
+  formatAgentMessages,
+  formatContentStrings,
+  getTokenCountForMessage,
+  createMetadataAggregator,
+} = require('@librechat/agents');
 const {
   Constants,
   VisionModes,
-  openAISchema,
   ContentTypes,
   EModelEndpoint,
   KnownEndpoints,
-  anthropicSchema,
   isAgentsEndpoint,
+  AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const {
-  formatMessage,
-  addCacheControl,
-  formatAgentMessages,
-  formatContentStrings,
-  createContextHandlers,
-} = require('~/app/clients/prompts');
+const { getCustomEndpointConfig, checkCapability } = require('~/server/services/Config');
+const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { getCustomEndpointConfig } = require('~/server/services/Config');
+const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const Tokenizer = require('~/server/services/Tokenizer');
 const BaseClient = require('~/app/clients/BaseClient');
+const { logger, sendEvent } = require('~/config');
 const { createRun } = require('./run');
-const { logger } = require('~/config');
 
 /** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
 /** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
 
-const providerParsers = {
-  [EModelEndpoint.openAI]: openAISchema.parse,
-  [EModelEndpoint.azureOpenAI]: openAISchema.parse,
-  [EModelEndpoint.anthropic]: anthropicSchema.parse,
-  [EModelEndpoint.bedrock]: bedrockInputSchema.parse,
+/**
+ * @param {ServerRequest} req
+ * @param {Agent} agent
+ * @param {string} endpoint
+ */
+const payloadParser = ({ req, agent, endpoint }) => {
+  if (isAgentsEndpoint(endpoint)) {
+    return { model: undefined };
+  } else if (endpoint === EModelEndpoint.bedrock) {
+    return bedrockInputSchema.parse(agent.model_parameters);
+  }
+  return req.body.endpointOption.model_parameters;
 };
 
 const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
-const noSystemModelRegex = [/\bo1\b/gi];
+const noSystemModelRegex = [/\b(o\d)\b/gi];
 
 // const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
 // const { getFormattedMemories } = require('~/models/Memory');
 // const { getCurrentDateTime } = require('~/utils');
+
+function createTokenCounter(encoding) {
+  return (message) => {
+    const countTokens = (text) => Tokenizer.getTokenCount(text, encoding);
+    return getTokenCountForMessage(message, countTokens);
+  };
+}
+
+function logToolError(graph, error, toolId) {
+  logger.error(
+    '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
+    error,
+    toolId,
+  );
+}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -99,6 +124,8 @@ class AgentClient extends BaseClient {
     this.outputTokensKey = 'output_tokens';
     /** @type {UsageMetadata} */
     this.usage;
+    /** @type {Record<string, number>} */
+    this.indexTokenCountMap = {};
   }
 
   /**
@@ -174,28 +201,19 @@ class AgentClient extends BaseClient {
   }
 
   getSaveOptions() {
-    const parseOptions = providerParsers[this.options.endpoint];
-    let runOptions =
-      this.options.endpoint === EModelEndpoint.agents
-        ? {
-          model: undefined,
-          // TODO:
-          // would need to be override settings; otherwise, model needs to be undefined
-          // model: this.override.model,
-          // instructions: this.override.instructions,
-          // additional_instructions: this.override.additional_instructions,
-        }
-        : {};
-
-    if (parseOptions) {
-      try {
-        runOptions = parseOptions(this.options.agent.model_parameters);
-      } catch (error) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
-          error,
-        );
-      }
+    // TODO:
+    // would need to be override settings; otherwise, model needs to be undefined
+    // model: this.override.model,
+    // instructions: this.override.instructions,
+    // additional_instructions: this.override.additional_instructions,
+    let runOptions = {};
+    try {
+      runOptions = payloadParser(this.options);
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
+        error,
+      );
     }
 
     return removeNullishValues(
@@ -377,6 +395,10 @@ class AgentClient extends BaseClient {
       }));
     }
 
+    for (let i = 0; i < messages.length; i++) {
+      this.indexTokenCountMap[i] = messages[i].tokenCount;
+    }
+
     const result = {
       tokenCountMap,
       prompt: payload,
@@ -461,6 +483,7 @@ class AgentClient extends BaseClient {
             err,
           );
         });
+        continue;
       }
       spendTokens(txMetadata, {
         promptTokens: usage.input_tokens,
@@ -528,6 +551,10 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, abortController = null }) {
+    /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
+    let config;
+    /** @type {ReturnType<createRun>} */
+    let run;
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -622,26 +649,31 @@ class AgentClient extends BaseClient {
       //   });
       // }
 
-      /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
-      const config = {
+      /** @type {TCustomConfig['endpoints']['agents']} */
+      const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
+
+      config = {
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
+          user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
         },
-        recursionLimit: this.options.req.app.locals[EModelEndpoint.agents]?.recursionLimit,
+        recursionLimit: agentsEConfig?.recursionLimit,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
       };
 
-      const initialMessages = formatAgentMessages(payload);
+      const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
+      let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
+        payload,
+        this.indexTokenCountMap,
+        toolSet,
+      );
       if (legacyContentEndpoints.has(this.options.agent.endpoint)) {
-        formatContentStrings(initialMessages);
+        initialMessages = formatContentStrings(initialMessages);
       }
-
-      /** @type {ReturnType<createRun>} */
-      let run;
 
       /**
        *
@@ -649,11 +681,22 @@ class AgentClient extends BaseClient {
        * @param {BaseMessage[]} messages
        * @param {number} [i]
        * @param {TMessageContentParts[]} [contentData]
+       * @param {Record<string, number>} [currentIndexCountMap]
        */
-      const runAgent = async (agent, _messages, i = 0, contentData = []) => {
+      const runAgent = async (agent, _messages, i = 0, contentData = [], _currentIndexCountMap) => {
         config.configurable.model = agent.model_parameters.model;
+        const currentIndexCountMap = _currentIndexCountMap ?? indexTokenCountMap;
         if (i > 0) {
           this.model = agent.model_parameters.model;
+        }
+        if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
+          config.recursionLimit = agent.recursion_limit;
+        }
+        if (
+          agentsEConfig?.maxRecursionLimit &&
+          config.recursionLimit > agentsEConfig?.maxRecursionLimit
+        ) {
+          config.recursionLimit = agentsEConfig?.maxRecursionLimit;
         }
         config.configurable.agent_id = agent.id;
         config.configurable.name = agent.name;
@@ -717,27 +760,46 @@ class AgentClient extends BaseClient {
         }
 
         if (contentData.length) {
+          const agentUpdate = {
+            type: ContentTypes.AGENT_UPDATE,
+            [ContentTypes.AGENT_UPDATE]: {
+              index: contentData.length,
+              runId: this.responseMessageId,
+              agentId: agent.id,
+            },
+          };
+          const streamData = {
+            event: GraphEvents.ON_AGENT_UPDATE,
+            data: agentUpdate,
+          };
+          this.options.aggregateContent(streamData);
+          sendEvent(this.options.res, streamData);
+          contentData.push(agentUpdate);
           run.Graph.contentData = contentData;
         }
 
+        const encoding = this.getEncoding();
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
+          tokenCounter: createTokenCounter(encoding),
+          indexTokenCountMap: currentIndexCountMap,
+          maxContextTokens: agent.maxContextTokens,
           callbacks: {
-            [Callback.TOOL_ERROR]: (graph, error, toolId) => {
-              logger.error(
-                '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
-                error,
-                toolId,
-              );
-            },
+            [Callback.TOOL_ERROR]: logToolError,
           },
         });
+
+        config.signal = null;
       };
 
       await runAgent(this.options.agent, initialMessages);
-
       let finalContentStart = 0;
-      if (this.agentConfigs && this.agentConfigs.size > 0) {
+      if (
+        this.agentConfigs &&
+        this.agentConfigs.size > 0 &&
+        (await checkCapability(this.options.req, AgentCapabilities.chain))
+      ) {
+        const windowSize = 5;
         let latestMessage = initialMessages.pop().content;
         if (typeof latestMessage !== 'string') {
           latestMessage = latestMessage[0].text;
@@ -745,7 +807,18 @@ class AgentClient extends BaseClient {
         let i = 1;
         let runMessages = [];
 
-        const lastFiveMessages = initialMessages.slice(-5);
+        const windowIndexCountMap = {};
+        const windowMessages = initialMessages.slice(-windowSize);
+        let currentIndex = 4;
+        for (let i = initialMessages.length - 1; i >= 0; i--) {
+          windowIndexCountMap[currentIndex] = indexTokenCountMap[i];
+          currentIndex--;
+          if (currentIndex < 0) {
+            break;
+          }
+        }
+        const encoding = this.getEncoding();
+        const tokenCounter = createTokenCounter(encoding);
         for (const [agentId, agent] of this.agentConfigs) {
           if (abortController.signal.aborted === true) {
             break;
@@ -780,7 +853,9 @@ class AgentClient extends BaseClient {
           }
           try {
             const contextMessages = [];
-            for (const message of lastFiveMessages) {
+            const runIndexCountMap = {};
+            for (let i = 0; i < windowMessages.length; i++) {
+              const message = windowMessages[i];
               const messageType = message._getType();
               if (
                 (!agent.tools || agent.tools.length === 0) &&
@@ -788,11 +863,13 @@ class AgentClient extends BaseClient {
               ) {
                 continue;
               }
-
+              runIndexCountMap[contextMessages.length] = windowIndexCountMap[i];
               contextMessages.push(message);
             }
-            const currentMessages = [...contextMessages, new HumanMessage(bufferString)];
-            await runAgent(agent, currentMessages, i, contentData);
+            const bufferMessage = new HumanMessage(bufferString);
+            runIndexCountMap[contextMessages.length] = tokenCounter(bufferMessage);
+            const currentMessages = [...contextMessages, bufferMessage];
+            await runAgent(agent, currentMessages, i, contentData, runIndexCountMap);
           } catch (err) {
             logger.error(
               `[api/server/controllers/agents/client.js #chatCompletion] Error running agent ${agentId} (${i})`,
@@ -803,6 +880,7 @@ class AgentClient extends BaseClient {
         }
       }
 
+      /** Note: not implemented */
       if (config.configurable.hide_sequential_outputs !== true) {
         finalContentStart = 0;
       }
@@ -849,18 +927,27 @@ class AgentClient extends BaseClient {
    * @param {string} params.text
    * @param {string} params.conversationId
    */
-  async titleConvo({ text }) {
+  async titleConvo({ text, abortController }) {
     if (!this.run) {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    const endpoint = this.options.agent.endpoint;
+    const { req, res } = this.options;
     /** @type {import('@librechat/agents').ClientOptions} */
-    const clientOptions = {
+    let clientOptions = {
       maxTokens: 75,
     };
-    let endpointConfig = this.options.req.app.locals[this.options.agent.endpoint];
+    let endpointConfig = req.app.locals[endpoint];
     if (!endpointConfig) {
-      endpointConfig = await getCustomEndpointConfig(this.options.agent.endpoint);
+      try {
+        endpointConfig = await getCustomEndpointConfig(endpoint);
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
+          err,
+        );
+      }
     }
     if (
       endpointConfig &&
@@ -869,12 +956,35 @@ class AgentClient extends BaseClient {
     ) {
       clientOptions.model = endpointConfig.titleModel;
     }
+    if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      clientOptions.model &&
+      this.options.agent.model_parameters.model !== clientOptions.model
+    ) {
+      clientOptions =
+        (
+          await initOpenAI({
+            req,
+            res,
+            optionsOnly: true,
+            overrideModel: clientOptions.model,
+            overrideEndpoint: endpoint,
+            endpointOption: {
+              model_parameters: clientOptions,
+            },
+          })
+        )?.llmConfig ?? clientOptions;
+    }
+    if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      delete clientOptions.maxTokens;
+    }
     try {
       const titleResult = await this.run.generateTitle({
         inputText: text,
         contentParts: this.contentParts,
         clientOptions,
         chainOptions: {
+          signal: abortController.signal,
           callbacks: [
             {
               handleLLMEnd,
@@ -900,7 +1010,7 @@ class AgentClient extends BaseClient {
         };
       });
 
-      this.recordCollectedUsage({
+      await this.recordCollectedUsage({
         model: clientOptions.model,
         context: 'title',
         collectedUsage,

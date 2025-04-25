@@ -1,5 +1,7 @@
 const { createContentAggregator, Providers } = require('@librechat/agents');
 const {
+  Constants,
+  ErrorTypes,
   EModelEndpoint,
   getResponseSender,
   AgentCapabilities,
@@ -19,7 +21,8 @@ const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { processFiles } = require('~/server/services/Files/process');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
-const { getToolFiles } = require('~/models/Conversation');
+const { getConvoFiles } = require('~/models/Conversation');
+const { getToolFilesByIds } = require('~/models/File');
 const { getModelMaxTokens } = require('~/utils');
 const { getAgent } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
@@ -99,10 +102,24 @@ const primeResources = async (req, _attachments, _tool_resources) => {
 };
 
 /**
+ * @param  {...string | number} values
+ * @returns {string | number | undefined}
+ */
+function optionalChainWithEmptyCheck(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return values[values.length - 1];
+}
+
+/**
  * @param {object} params
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
  * @param {Agent} params.agent
+ * @param {Set<string>} [params.allowedProviders]
  * @param {object} [params.endpointOption]
  * @param {boolean} [params.isInitialAgent]
  * @returns {Promise<Agent>}
@@ -112,18 +129,26 @@ const initializeAgentOptions = async ({
   res,
   agent,
   endpointOption,
+  allowedProviders,
   isInitialAgent = false,
 }) => {
+  if (allowedProviders.size > 0 && !allowedProviders.has(agent.provider)) {
+    throw new Error(
+      `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,
+    );
+  }
   let currentFiles;
+  /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   if (
     isInitialAgent &&
     req.body.conversationId != null &&
-    agent.model_parameters?.resendFiles === true
+    (agent.model_parameters?.resendFiles ?? true) === true
   ) {
-    const fileIds = (await getToolFiles(req.body.conversationId)).map((f) => f.file_id);
-    if (requestFiles.length || fileIds.length) {
-      currentFiles = await processFiles(requestFiles, fileIds);
+    const fileIds = (await getConvoFiles(req.body.conversationId)) ?? [];
+    const toolFiles = await getToolFilesByIds(fileIds);
+    if (requestFiles.length || toolFiles.length) {
+      currentFiles = await processFiles(requestFiles.concat(toolFiles));
     }
   } else if (isInitialAgent && requestFiles.length) {
     currentFiles = await processFiles(requestFiles);
@@ -134,14 +159,20 @@ const initializeAgentOptions = async ({
     currentFiles,
     agent.tool_resources,
   );
+
+  const provider = agent.provider;
   const { tools, toolContextMap } = await loadAgentTools({
     req,
     res,
-    agent,
+    agent: {
+      id: agent.id,
+      tools: agent.tools,
+      provider,
+      model: agent.model,
+    },
     tool_resources,
   });
 
-  const provider = agent.provider;
   agent.endpoint = provider;
   let getOptions = providerConfigMap[provider];
   if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
@@ -178,6 +209,7 @@ const initializeAgentOptions = async ({
     agent.provider = options.provider;
   }
 
+  /** @type {import('@librechat/agents').ClientOptions} */
   agent.model_parameters = Object.assign(model_parameters, options.llmConfig);
   if (options.configOptions) {
     agent.model_parameters.configuration = options.configOptions;
@@ -196,16 +228,23 @@ const initializeAgentOptions = async ({
 
   const tokensModel =
     agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
-
+  const maxTokens = optionalChainWithEmptyCheck(
+    agent.model_parameters.maxOutputTokens,
+    agent.model_parameters.maxTokens,
+    0,
+  );
+  const maxContextTokens = optionalChainWithEmptyCheck(
+    agent.model_parameters.maxContextTokens,
+    agent.max_context_tokens,
+    getModelMaxTokens(tokensModel, providerEndpointMap[provider]),
+    4096,
+  );
   return {
     ...agent,
     tools,
     attachments,
     toolContextMap,
-    maxContextTokens:
-      agent.max_context_tokens ??
-      getModelMaxTokens(tokensModel, providerEndpointMap[provider]) ??
-      4000,
+    maxContextTokens: (maxContextTokens - maxTokens) * 0.9,
   };
 };
 
@@ -239,6 +278,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   const agentConfigs = new Map();
+  /** @type {Set<string>} */
+  const allowedProviders = new Set(req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders);
 
   // Handle primary agent
   const primaryConfig = await initializeAgentOptions({
@@ -246,6 +287,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     res,
     agent: primaryAgent,
     endpointOption,
+    allowedProviders,
     isInitialAgent: true,
   });
 
@@ -261,6 +303,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         res,
         agent,
         endpointOption,
+        allowedProviders,
       });
       agentConfigs.set(agentId, config);
     }
@@ -275,19 +318,25 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const client = new AgentClient({
     req,
+    res,
     sender,
     contentParts,
     agentConfigs,
     eventHandlers,
     collectedUsage,
+    aggregateContent,
     artifactPromises,
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
-    endpoint: EModelEndpoint.agents,
     attachments: primaryConfig.attachments,
+    endpointType: endpointOption.endpointType,
     maxContextTokens: primaryConfig.maxContextTokens,
     resendFiles: primaryConfig.model_parameters?.resendFiles ?? true,
+    endpoint:
+      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
+        ? primaryConfig.endpoint
+        : EModelEndpoint.agents,
   });
 
   return { client };
