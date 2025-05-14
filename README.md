@@ -68,11 +68,6 @@
 - 🪄 **带有代码工件的生成 UI**：  
   - [代码工件](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) 允许在聊天中直接创建 React、HTML 和 Mermaid 图
 
-- 💾 **预设和上下文管理**：  
-  - 创建、保存和分享自定义预设  
-  - 交谈中智能切换 AI 端点和预设
-  - 编辑、重新提交和继续消息，进行对话分支  
-  - [分叉消息与对话](https://www.librechat.ai/docs/features/fork) 以实现高级上下文控制
 
 - 💬 **多模态与文件交互**：  
   - 上传并分析图像，支持 Claude 3、GPT-4o、o1、Llama-Vision 和 Gemini 📸  
@@ -82,8 +77,16 @@
   - 英语、中文、德语、西班牙语、法语、意大利语、波兰语、巴西葡萄牙语
   - Русский、日语、瑞典语、韩语、越南语、繁体中文、阿拉伯语、土耳其语、荷兰语、希伯来语
 
-- 🎨 **可自定义界面**：  
-  - 可自定义的下拉菜单和界面，适应专业用户和新手
+- 🎨 图像生成与编辑
+  - 使用 [GPT-Image-1](https://www.librechat.ai/docs/features/image_gen#1--openai-image-tools-recommended) 进行文本到图像和图像到图像的转换。
+  - 使用 [DALL-E (3/2)](https://www.librechat.ai/docs/features/image_gen#2--dalle-legacy)、[Stable Diffusion](https://www.librechat.ai/docs/features/image_gen#3--stable-diffusion-local)、[Flux](https://www.librechat.ai/docs/features/image_gen#4--flux) 或任何 [MCP 服务器](https://www.librechat.ai/docs/features/image_gen#5--model-context-protocol-mcp) 进行文本到图像的生成。
+  - 从提示生成惊艳的视觉效果或通过单一指令精炼现有图像。
+
+- 💾 预设与上下文管理
+  - 创建、保存和分享自定义预设。
+  - 在聊天中随时切换 AI 端点和预设。
+  - 编辑、重新提交和继续消息，实现对话分支。
+  - [分叉消息和对话](https://www.librechat.ai/docs/features/fork) 以进行高级上下文控制。
 
 - 🗣️ **语音与音频**：  
   - 通过语音识别和语音合成进行免提聊天  
