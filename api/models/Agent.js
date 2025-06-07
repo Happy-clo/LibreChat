@@ -170,7 +170,6 @@ const isDuplicateVersion = (updateData, currentData, versions, actionsHash = nul
     'created_at',
     'updated_at',
     '__v',
-    'agent_ids',
     'versions',
     'actionsHash', // Exclude actionsHash from direct comparison
   ];
@@ -301,10 +300,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     }
 
     const shouldCreateVersion =
-      forceVersion ||
-      (versions &&
-        versions.length > 0 &&
-        (Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet));
+      forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet;
 
     if (shouldCreateVersion) {
       const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
