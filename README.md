@@ -133,11 +133,6 @@ LibreChat 将助理 AI 的未来与 OpenAI 的 ChatGPT 革命性技术结合在�
   - **RAG API:** [github.com/danny-avila/rag_api](https://github.com/danny-avila/rag_api)
   - **网站:** [github.com/LibreChat-AI/librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
 
-**其他：**
-  - **网站:** [librechat.ai](https://librechat.ai)
-  - **文档:** [docs.librechat.ai](https://docs.librechat.ai)
-  - **博客:** [blog.librechat.ai](https://blog.librechat.ai)
-
 ---
 
 ## 📝 更新日志
