@@ -81,6 +81,12 @@
   - 使用 [GPT-Image-1](https://www.librechat.ai/docs/features/image_gen#1--openai-image-tools-recommended) 进行文本到图像和图像到图像的转换。
   - 使用 [DALL-E (3/2)](https://www.librechat.ai/docs/features/image_gen#2--dalle-legacy)、[Stable Diffusion](https://www.librechat.ai/docs/features/image_gen#3--stable-diffusion-local)、[Flux](https://www.librechat.ai/docs/features/image_gen#4--flux) 或任何 [MCP 服务器](https://www.librechat.ai/docs/features/image_gen#5--model-context-protocol-mcp) 进行文本到图像的生成。
   - 从提示生成惊艳的视觉效果或通过单一指令精炼现有图像。
+- 🤖 **AI Model Selection**:  
+  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Responses API (incl. Azure)
+  - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
+  - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
+    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
+    - OpenRouter, Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
 - 💾 预设与上下文管理
   - 创建、保存和分享自定义预设。
@@ -92,6 +98,12 @@
   - 通过语音识别和语音合成进行免提聊天  
   - 自动发送和播放音频  
   - 支持 OpenAI、Azure OpenAI 和 Elevenlabs
+- 🔦 **Agents & Tools Integration**:  
+  - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
+    - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
+    - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more  
+    - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
+    - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
 
 - 📥 **导入与导出对话**：  
   - 从 LibreChat、ChatGPT、Chatbot UI 导入对话  
