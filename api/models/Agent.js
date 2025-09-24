@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
 const { ResourceType, SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
+const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_all, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const {
   removeAgentFromAllProjects,
@@ -11,7 +11,7 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { getCachedTools } = require('~/server/services/Config');
+const { getMCPServerTools } = require('~/server/services/Config');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -50,6 +50,14 @@ const createAgent = async (agentData) => {
 const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
 
 /**
+ * Get multiple agent documents based on the provided search parameters.
+ *
+ * @param {Object} searchParameter - The search parameters to find agents.
+ * @returns {Promise<Agent[]>} Array of agent documents as plain objects.
+ */
+const getAgents = async (searchParameter) => await Agent.find(searchParameter).lean();
+
+/**
  * Load an agent based on the provided ID
  *
  * @param {Object} params
@@ -61,8 +69,6 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  */
 const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
-  /** @type {Record<string, FunctionTool>} */
-  const availableTools = await getCachedTools({ userId: req.user.id, includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
@@ -78,15 +84,20 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
     tools.push(Tools.web_search);
   }
 
+  const addedServers = new Set();
   if (mcpServers.size > 0) {
-    for (const toolName of Object.keys(availableTools)) {
-      if (!toolName.includes(mcp_delimiter)) {
+    for (const mcpServer of mcpServers) {
+      if (addedServers.has(mcpServer)) {
         continue;
       }
-      const mcpServer = toolName.split(mcp_delimiter)?.[1];
-      if (mcpServer && mcpServers.has(mcpServer)) {
-        tools.push(toolName);
+      const serverTools = await getMCPServerTools(mcpServer);
+      if (!serverTools) {
+        tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+        addedServers.add(mcpServer);
+        continue;
       }
+      tools.push(...Object.keys(serverTools));
+      addedServers.add(mcpServer);
     }
   }
 
@@ -672,7 +683,7 @@ const getListAgents = async (searchParameter) => {
  * This function also updates the corresponding projects to include or exclude the agent ID.
  *
  * @param {Object} params - Parameters for updating the agent's projects.
- * @param {MongoUser} params.user - Parameters for updating the agent's projects.
+ * @param {IUser} params.user - Parameters for updating the agent's projects.
  * @param {string} params.agentId - The ID of the agent to update.
  * @param {string[]} [params.projectIds] - Array of project IDs to add to the agent.
  * @param {string[]} [params.removeProjectIds] - Array of project IDs to remove from the agent.
@@ -826,6 +837,7 @@ const countPromotedAgents = async () => {
 
 module.exports = {
   getAgent,
+  getAgents,
   loadAgent,
   createAgent,
   updateAgent,

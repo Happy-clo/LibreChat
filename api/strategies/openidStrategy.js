@@ -7,10 +7,17 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { CacheKeys, ErrorTypes } = require('librechat-data-provider');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
-const { isEnabled, safeStringify, logHeaders } = require('@librechat/api');
+const {
+  isEnabled,
+  logHeaders,
+  safeStringify,
+  findOpenIDUser,
+  getBalanceConfig,
+} = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { findUser, createUser, updateUser } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
+const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 
 /**
@@ -177,7 +184,7 @@ const getUserInfo = async (config, accessToken, sub) => {
     const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub);
     return await client.fetchUserInfo(config, exchangedAccessToken, sub);
   } catch (error) {
-    logger.warn(`[openidStrategy] getUserInfo: Error fetching user info: ${error}`);
+    logger.error('[openidStrategy] getUserInfo: Error fetching user info:', error);
     return null;
   }
 };
@@ -330,37 +337,49 @@ async function setupOpenId() {
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         usePKCE,
       },
+      /**
+       * @param {import('openid-client').TokenEndpointResponseHelpers} tokenset
+       * @param {import('passport-jwt').VerifyCallback} done
+       */
       async (tokenset, done) => {
         try {
           const claims = tokenset.claims();
-          let user = await findUser({ openidId: claims.sub });
-          logger.info(
-            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${claims.sub}`,
-          );
-
-          if (!user) {
-            user = await findUser({ email: claims.email });
-            logger.info(
-              `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
-                claims.email
-              } for openidId: ${claims.sub}`,
-            );
-          }
-          if (user != null && user.provider !== 'openid') {
-            logger.info(
-              `[openidStrategy] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
-            );
-            return done(null, false, {
-              message: ErrorTypes.AUTH_FAILED,
-            });
-          }
           const userinfo = {
             ...claims,
             ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),
           };
+
+          const appConfig = await getAppConfig();
+          if (!isEmailDomainAllowed(userinfo.email, appConfig?.registration?.allowedDomains)) {
+            logger.error(
+              `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
+            );
+            return done(null, false, { message: 'Email domain not allowed' });
+          }
+
+          const result = await findOpenIDUser({
+            findUser,
+            email: claims.email,
+            openidId: claims.sub,
+            idOnTheSource: claims.oid,
+            strategyName: 'openidStrategy',
+          });
+          let user = result.user;
+          const error = result.error;
+
+          if (error) {
+            return done(null, false, {
+              message: ErrorTypes.AUTH_FAILED,
+            });
+          }
+
           const fullName = getFullName(userinfo);
 
           if (requiredRole) {
+            const requiredRoles = requiredRole
+              .split(',')
+              .map((role) => role.trim())
+              .filter(Boolean);
             let decodedToken = '';
             if (requiredRoleTokenKind === 'access') {
               decodedToken = jwtDecode(tokenset.access_token);
@@ -383,9 +402,13 @@ async function setupOpenId() {
               );
             }
 
-            if (!roles.includes(requiredRole)) {
+            if (!requiredRoles.some((role) => roles.includes(role))) {
+              const rolesList =
+                requiredRoles.length === 1
+                  ? `"${requiredRoles[0]}"`
+                  : `one of: ${requiredRoles.map((r) => `"${r}"`).join(', ')}`;
               return done(null, false, {
-                message: `You must have the "${requiredRole}" role to log in.`,
+                message: `You must have ${rolesList} role to log in.`,
               });
             }
           }
@@ -410,8 +433,7 @@ async function setupOpenId() {
               idOnTheSource: userinfo.oid,
             };
 
-            const balanceConfig = await getBalanceConfig();
-
+            const balanceConfig = getBalanceConfig(appConfig);
             user = await createUser(user, balanceConfig, true, true);
           } else {
             user.provider = 'openid';
@@ -419,6 +441,10 @@ async function setupOpenId() {
             user.username = username;
             user.name = fullName;
             user.idOnTheSource = userinfo.oid;
+            if (userinfo.email && userinfo.email !== user.email) {
+              user.email = userinfo.email;
+              user.emailVerified = userinfo.email_verified || false;
+            }
           }
 
           if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
@@ -439,7 +465,9 @@ async function setupOpenId() {
               userinfo.sub,
             );
             if (imageBuffer) {
-              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+              const { saveBuffer } = getStrategyFunctions(
+                appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+              );
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),
