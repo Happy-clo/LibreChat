@@ -32,7 +32,7 @@ jobs:
           upstream_sync_repo: danny-avila/LibreChat
           upstream_sync_branch: main
           target_sync_branch: main
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          target_repo_token: ${{ secrets.G_TOKEN }}
           test_mode: false
 
       - name: Sync check
