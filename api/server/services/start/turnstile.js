@@ -2,7 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { removeNullishValues } = require('librechat-data-provider');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const { connectDb } = require('../../db/connect');
+const { connectDb } = require('../../../db/connect');
 
 // Define Turnstile data schema
 const turnstileSchema = new mongoose.Schema({
