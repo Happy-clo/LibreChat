@@ -23,8 +23,8 @@ const turnstileSchema = new mongoose.Schema({
 const TurnstileData = mongoose.model('TurnstileData', turnstileSchema);
 
 /**
- * Fetches turnstile data from hapxs API and stores it to MongoDB
- * @returns {Promise<Object>} The fetched turnstile data
+ * Fetches turnstile configuration from hapxs API and stores it to MongoDB
+ * @returns {Promise<Object>} The fetched turnstile configuration data
  */
 async function fetchAndStoreTurnstileData() {
   try {
@@ -49,14 +49,25 @@ async function fetchAndStoreTurnstileData() {
     
     await turnstileRecord.save();
     
-    logger.info('Successfully fetched and stored turnstile data from hapxs API', {
+    logger.info('Successfully fetched and stored turnstile configuration from hapxs API', {
       dataSize: JSON.stringify(response.data).length,
       recordId: turnstileRecord._id
     });
     
-    return response.data;
+    // Extract turnstile configuration from API response
+    const turnstileConfig = {
+      siteKey: response.data?.siteKey || response.data?.site_key,
+      options: {
+        language: response.data?.options?.language || response.data?.language || 'auto',
+        size: response.data?.options?.size || response.data?.size || 'normal',
+        theme: response.data?.options?.theme || response.data?.theme || 'auto',
+        ...response.data?.options
+      }
+    };
+    
+    return turnstileConfig;
   } catch (error) {
-    logger.error('Failed to fetch or store turnstile data:', {
+    logger.error('Failed to fetch or store turnstile configuration:', {
       error: error.message,
       stack: error.stack,
       url: 'https://api.hapxs.com/api/turnstile/public-turnstile'
@@ -120,7 +131,7 @@ async function verifyTurnstileToken(token) {
 
 /**
  * Loads and maps the Cloudflare Turnstile configuration.
- * Now also fetches data from hapxs API and stores to MongoDB.
+ * Fetches configuration from hapxs API and stores to MongoDB.
  *
  * Expected config structure:
  *
@@ -138,25 +149,39 @@ async function loadTurnstileConfig(config, configDefaults) {
   const { turnstile: customTurnstile = {} } = config ?? {};
   const { turnstile: defaults = {} } = configDefaults;
 
+  // First try to fetch configuration from hapxs API
+  let apiTurnstileConfig = null;
+  try {
+    apiTurnstileConfig = await fetchAndStoreTurnstileData();
+    logger.info('Successfully fetched turnstile configuration from hapxs API');
+  } catch (error) {
+    logger.warn('Failed to fetch turnstile configuration from hapxs API:', error.message);
+  }
+
+  // Determine the site key from API, custom config, or defaults (in that order)
+  const siteKey = apiTurnstileConfig?.siteKey ?? 
+                  customTurnstile.siteKey ?? 
+                  defaults.siteKey;
+  
+  if (!siteKey || siteKey === 'default-site-key') {
+    logger.warn('Turnstile is DISABLED - No valid site key provided from API or configuration.');
+    return null;
+  }
+
   /** @type {TCustomConfig['turnstile']} */
   const loadedTurnstile = removeNullishValues({
-    siteKey: customTurnstile.siteKey ?? defaults.siteKey ?? 'default-site-key',
-    options: customTurnstile.options ?? defaults.options ?? {},
+    siteKey: siteKey,
+    options: {
+      // API options take priority, then custom config, then defaults
+      ...defaults.options,
+      ...customTurnstile.options,
+      ...apiTurnstileConfig?.options
+    },
   });
 
-  // Always enable Turnstile
   logger.info(
-    'Turnstile is ALWAYS ENABLED with configuration:\n' + JSON.stringify(loadedTurnstile, null, 2),
+    'Turnstile is ENABLED with configuration:\n' + JSON.stringify(loadedTurnstile, null, 2),
   );
-  
-  // Fetch and store data from hapxs API
-  try {
-    const apiData = await fetchAndStoreTurnstileData();
-    loadedTurnstile.apiData = apiData;
-    logger.info('Successfully integrated hapxs API data into turnstile configuration');
-  } catch (error) {
-    logger.warn('Failed to fetch hapxs API data, continuing with basic configuration:', error.message);
-  }
 
   return loadedTurnstile;
 }

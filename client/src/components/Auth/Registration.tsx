@@ -178,18 +178,20 @@ const Registration: React.FC = () => {
                 value === password || localize('com_auth_password_not_match'),
             })}
 
-            <div className="my-4 flex justify-center">
-              <Turnstile
-                siteKey={startupConfig?.turnstile?.siteKey || 'default-site-key'}
-                options={{
-                  ...startupConfig?.turnstile?.options,
-                  theme: validTheme,
-                }}
-                onSuccess={(token) => setTurnstileToken(token)}
-                onError={() => setTurnstileToken(null)}
-                onExpire={() => setTurnstileToken(null)}
-              />
-            </div>
+            {startupConfig?.turnstile?.siteKey && (
+              <div className="my-4 flex justify-center">
+                <Turnstile
+                  siteKey={startupConfig.turnstile.siteKey}
+                  options={{
+                    ...startupConfig.turnstile?.options,
+                    theme: validTheme,
+                  }}
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onError={() => setTurnstileToken(null)}
+                  onExpire={() => setTurnstileToken(null)}
+                />
+              </div>
+            )}
 
             <div className="mt-6">
               <Button

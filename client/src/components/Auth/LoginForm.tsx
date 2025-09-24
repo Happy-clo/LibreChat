@@ -29,7 +29,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
-  const requireCaptcha = true;
+  const requireCaptcha = !!startupConfig.turnstile?.siteKey;
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
@@ -153,18 +153,20 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           </a>
         )}
 
-        <div className="my-4 flex justify-center">
-          <Turnstile
-            siteKey={startupConfig.turnstile?.siteKey || 'default-site-key'}
-            options={{
-              ...startupConfig.turnstile?.options,
-              theme: validTheme,
-            }}
-            onSuccess={setTurnstileToken}
-            onError={() => setTurnstileToken(null)}
-            onExpire={() => setTurnstileToken(null)}
-          />
-        </div>
+        {startupConfig.turnstile?.siteKey && (
+          <div className="my-4 flex justify-center">
+            <Turnstile
+              siteKey={startupConfig.turnstile.siteKey}
+              options={{
+                ...startupConfig.turnstile?.options,
+                theme: validTheme,
+              }}
+              onSuccess={setTurnstileToken}
+              onError={() => setTurnstileToken(null)}
+              onExpire={() => setTurnstileToken(null)}
+            />
+          </div>
+        )}
 
         <div className="mt-6">
           <Button
