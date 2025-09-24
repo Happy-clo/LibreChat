@@ -16,7 +16,7 @@ type TLoginFormProps = {
 
 const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
   const localize = useLocalize();
-  const { theme } = useContext(ThemeContext);
+  const { theme } = useContext(ThemeContext) as { theme: string };
   const {
     register,
     getValues,
@@ -29,7 +29,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
-  const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
+  const requireCaptcha = true;
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
@@ -84,7 +84,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
         className="mt-6"
         aria-label="Login form"
         method="POST"
-        onSubmit={handleSubmit((data) => onSubmit(data))}
+        onSubmit={handleSubmit((data) => onSubmit({ ...data, turnstileToken }))}
       >
         <div className="mb-4">
           <div className="relative">
@@ -153,20 +153,18 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           </a>
         )}
 
-        {requireCaptcha && (
-          <div className="my-4 flex justify-center">
-            <Turnstile
-              siteKey={startupConfig.turnstile!.siteKey}
-              options={{
-                ...startupConfig.turnstile!.options,
-                theme: validTheme,
-              }}
-              onSuccess={setTurnstileToken}
-              onError={() => setTurnstileToken(null)}
-              onExpire={() => setTurnstileToken(null)}
-            />
-          </div>
-        )}
+        <div className="my-4 flex justify-center">
+          <Turnstile
+            siteKey={startupConfig.turnstile?.siteKey || 'default-site-key'}
+            options={{
+              ...startupConfig.turnstile?.options,
+              theme: validTheme,
+            }}
+            onSuccess={setTurnstileToken}
+            onError={() => setTurnstileToken(null)}
+            onExpire={() => setTurnstileToken(null)}
+          />
+        </div>
 
         <div className="mt-6">
           <Button

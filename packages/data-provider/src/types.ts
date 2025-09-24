@@ -378,6 +378,7 @@ export type TRegisterUser = {
   password: string;
   confirm_password?: string;
   token?: string;
+  turnstileToken?: string;
 };
 
 export type TLoginUser = {
@@ -385,6 +386,7 @@ export type TLoginUser = {
   password: string;
   token?: string;
   backupCode?: string;
+  turnstileToken?: string;
 };
 
 export type TLoginResponse = {

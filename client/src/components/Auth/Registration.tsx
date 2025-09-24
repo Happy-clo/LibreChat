@@ -12,7 +12,7 @@ import { ErrorMessage } from './ErrorMessage';
 const Registration: React.FC = () => {
   const navigate = useNavigate();
   const localize = useLocalize();
-  const { theme } = useContext(ThemeContext);
+  const { theme } = useContext(ThemeContext) as { theme: string };
   const { startupConfig, startupConfigError, isFetching } = useOutletContext<TLoginLayoutContext>();
 
   const {
@@ -33,8 +33,8 @@ const Registration: React.FC = () => {
   const token = queryParams.get('token');
   const validTheme = isDark(theme) ? 'dark' : 'light';
 
-  // only require captcha if we have a siteKey
-  const requireCaptcha = Boolean(startupConfig?.turnstile?.siteKey);
+  // Always require captcha
+  const requireCaptcha = true;
 
   const registerUser = useRegisterUserMutation({
     onMutate: () => {
@@ -123,7 +123,7 @@ const Registration: React.FC = () => {
             aria-label="Registration form"
             method="POST"
             onSubmit={handleSubmit((data: TRegisterUser) =>
-              registerUser.mutate({ ...data, token: token ?? undefined }),
+              registerUser.mutate({ ...data, token: token ?? undefined, turnstileToken }),
             )}
           >
             {renderInput('name', 'com_auth_full_name', 'text', {
@@ -178,20 +178,18 @@ const Registration: React.FC = () => {
                 value === password || localize('com_auth_password_not_match'),
             })}
 
-            {startupConfig?.turnstile?.siteKey && (
-              <div className="my-4 flex justify-center">
-                <Turnstile
-                  siteKey={startupConfig.turnstile.siteKey}
-                  options={{
-                    ...startupConfig.turnstile.options,
-                    theme: validTheme,
-                  }}
-                  onSuccess={(token) => setTurnstileToken(token)}
-                  onError={() => setTurnstileToken(null)}
-                  onExpire={() => setTurnstileToken(null)}
-                />
-              </div>
-            )}
+            <div className="my-4 flex justify-center">
+              <Turnstile
+                siteKey={startupConfig?.turnstile?.siteKey || 'default-site-key'}
+                options={{
+                  ...startupConfig?.turnstile?.options,
+                  theme: validTheme,
+                }}
+                onSuccess={(token) => setTurnstileToken(token)}
+                onError={() => setTurnstileToken(null)}
+                onExpire={() => setTurnstileToken(null)}
+              />
+            </div>
 
             <div className="mt-6">
               <Button

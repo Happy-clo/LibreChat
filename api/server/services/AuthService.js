@@ -23,6 +23,8 @@ const {
 const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
+const { getOAuthReconnectionManager } = require('~/config');
+const { verifyTurnstileToken } = require('~/server/services/start/turnstile');
 const { sendEmail } = require('~/server/utils');
 
 const domains = {
@@ -177,11 +179,27 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username } = user;
+  const { email, password, name, username, turnstileToken } = user;
 
   let newUserId;
   try {
     const appConfig = await getAppConfig();
+    
+    // Always verify Turnstile token
+    if (!turnstileToken) {
+      logger.warn(`[registerUser] [Missing Turnstile token] [Email: ${email}]`);
+      return { status: 400, message: 'Captcha verification is required.' };
+    }
+    
+    const turnstileResult = await verifyTurnstileToken(turnstileToken);
+    if (!turnstileResult.success || !turnstileResult.verified) {
+      logger.warn(`[registerUser] [Turnstile verification failed] [Email: ${email}]`, {
+        turnstileError: turnstileResult.error
+      });
+      return { status: 400, message: 'Captcha verification failed. Please try again.' };
+    }
+    logger.info(`[registerUser] [Turnstile verification successful] [Email: ${email}]`);
+    
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
