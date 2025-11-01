@@ -4,12 +4,12 @@ permissions:
   contents: write
 
 on:
-  push:
-    branches:
-      - main
-      - dev
-    paths-ignore:
-      - .github/**
+  # push:
+  #   branches:
+  #     - main
+  #     - dev
+  #   paths-ignore:
+  #     - .github/**
   workflow_dispatch:
   schedule:
     # 在每天的UTC凌晨0点（上海时间早上8点）执行
@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout target repo
-        uses: actions/checkout@v2  # 使用 v2 版本
+        uses: actions/checkout@v2 # 使用 v2 版本
 
       - name: Sync upstream changes
         id: sync
