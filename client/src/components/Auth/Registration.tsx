@@ -33,8 +33,8 @@ const Registration: React.FC = () => {
   const token = queryParams.get('token');
   const validTheme = isDark(theme) ? 'dark' : 'light';
 
-  // Always require captcha
-  const requireCaptcha = true;
+  // Require captcha only if Turnstile is configured
+  const requireCaptcha = !!startupConfig?.turnstile?.siteKey;
 
   const registerUser = useRegisterUserMutation({
     onMutate: () => {
