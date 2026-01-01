@@ -184,20 +184,26 @@ const registerUser = async (user, additionalData = {}) => {
   try {
     const appConfig = await getAppConfig();
     
-    // Always verify Turnstile token
-    if (!turnstileToken) {
-      logger.warn(`[registerUser] [Missing Turnstile token] [Email: ${email}]`);
-      return { status: 400, message: 'Captcha verification is required.' };
-    }
+    // Check if Turnstile is enabled before requiring token
+    const turnstileEnabled = !!appConfig?.turnstile?.siteKey;
     
-    const turnstileResult = await verifyTurnstileToken(turnstileToken);
-    if (!turnstileResult.success || !turnstileResult.verified) {
-      logger.warn(`[registerUser] [Turnstile verification failed] [Email: ${email}]`, {
-        turnstileError: turnstileResult.error
-      });
-      return { status: 400, message: 'Captcha verification failed. Please try again.' };
+    if (turnstileEnabled) {
+      if (!turnstileToken) {
+        logger.warn(`[registerUser] [Missing Turnstile token] [Email: ${email}]`);
+        return { status: 400, message: 'Captcha verification is required.' };
+      }
+      
+      const turnstileResult = await verifyTurnstileToken(turnstileToken);
+      if (!turnstileResult.success || !turnstileResult.verified) {
+        logger.warn(`[registerUser] [Turnstile verification failed] [Email: ${email}]`, {
+          turnstileError: turnstileResult.error
+        });
+        return { status: 400, message: 'Captcha verification failed. Please try again.' };
+      }
+      logger.info(`[registerUser] [Turnstile verification successful] [Email: ${email}]`);
+    } else {
+      logger.debug(`[registerUser] [Turnstile disabled, skipping verification] [Email: ${email}]`);
     }
-    logger.info(`[registerUser] [Turnstile verification successful] [Email: ${email}]`);
     
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
