@@ -35,6 +35,9 @@ export default function Footer({ className }: { className?: string }) {
       onClick={() => handleLinkClick(privacyPolicy.externalUrl)}
     >
       {localize('com_ui_privacy_policy')}
+      {privacyPolicy.openNewTab === true && (
+        <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
+      )}
     </a>
   );
 
@@ -45,6 +48,9 @@ export default function Footer({ className }: { className?: string }) {
       onClick={() => handleLinkClick(termsOfService.externalUrl)}
     >
       {localize('com_ui_terms_of_service')}
+      {termsOfService.openNewTab === true && (
+        <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
+      )}
     </a>
   );
 
@@ -76,6 +82,7 @@ export default function Footer({ className }: { className?: string }) {
                 {...otherProps}
               >
                 {children}
+                <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
               </a>
             );
           },
