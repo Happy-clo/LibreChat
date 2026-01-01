@@ -196,8 +196,6 @@ async function loadTurnstileConfig(config, configDefaults) {
   logger.info(`[loadTurnstileConfig] TURNSTILE_SECRET_KEY: ${envSecretKey ? 'SET' : 'NOT SET'}`);
 
   // Check if we have environment variables for direct Turnstile configuration
-  const envSiteKey = process.env.TURNSTILE_SITE_KEY;
-  const envSecretKey = process.env.TURNSTILE_SECRET_KEY;
   
   if (envSiteKey && envSecretKey) {
     logger.info('[loadTurnstileConfig] Using environment variables for Turnstile configuration');
