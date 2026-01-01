@@ -6,6 +6,11 @@ import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { 
+  getTurnstileConfig, 
+  isTurnstileEnabled, 
+  createTurnstileOptions 
+} from '~/utils/turnstileConfig';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -29,7 +34,11 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
-  const requireCaptcha = !!startupConfig.turnstile?.siteKey;
+  
+  // Use the new Turnstile configuration utility
+  const turnstileConfig = getTurnstileConfig(startupConfig);
+  const requireCaptcha = isTurnstileEnabled(startupConfig);
+  const turnstileOptions = createTurnstileOptions(startupConfig, theme);
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
@@ -153,14 +162,11 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           </a>
         )}
 
-        {startupConfig.turnstile?.siteKey && (
+        {turnstileConfig && (
           <div className="my-4 flex justify-center">
             <Turnstile
-              siteKey={startupConfig.turnstile.siteKey}
-              options={{
-                ...startupConfig.turnstile?.options,
-                theme: validTheme,
-              }}
+              siteKey={turnstileConfig.siteKey}
+              options={turnstileOptions}
               onSuccess={setTurnstileToken}
               onError={() => setTurnstileToken(null)}
               onExpire={() => setTurnstileToken(null)}

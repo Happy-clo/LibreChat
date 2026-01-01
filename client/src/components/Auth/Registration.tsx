@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
@@ -8,6 +8,12 @@ import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
+import { 
+  getTurnstileConfig, 
+  isTurnstileEnabled, 
+  createTurnstileOptions,
+  logTurnstileStatus 
+} from '~/utils/turnstileConfig';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
@@ -33,8 +39,17 @@ const Registration: React.FC = () => {
   const token = queryParams.get('token');
   const validTheme = isDark(theme) ? 'dark' : 'light';
 
-  // Require captcha only if Turnstile is configured
-  const requireCaptcha = !!startupConfig?.turnstile?.siteKey;
+  // Use the new Turnstile configuration utility
+  const turnstileConfig = getTurnstileConfig(startupConfig);
+  const requireCaptcha = isTurnstileEnabled(startupConfig);
+  const turnstileOptions = createTurnstileOptions(startupConfig, theme);
+
+  // Log Turnstile status for debugging
+  useEffect(() => {
+    if (startupConfig) {
+      logTurnstileStatus(startupConfig);
+    }
+  }, [startupConfig]);
 
   const registerUser = useRegisterUserMutation({
     onMutate: () => {
@@ -178,14 +193,11 @@ const Registration: React.FC = () => {
                 value === password || localize('com_auth_password_not_match'),
             })}
 
-            {startupConfig?.turnstile?.siteKey && (
+            {turnstileConfig && (
               <div className="my-4 flex justify-center">
                 <Turnstile
-                  siteKey={startupConfig.turnstile.siteKey}
-                  options={{
-                    ...startupConfig.turnstile?.options,
-                    theme: validTheme,
-                  }}
+                  siteKey={turnstileConfig.siteKey}
+                  options={turnstileOptions}
                   onSuccess={(token) => setTurnstileToken(token)}
                   onError={() => setTurnstileToken(null)}
                   onExpire={() => setTurnstileToken(null)}

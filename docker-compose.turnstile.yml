@@ -1,0 +1,70 @@
+version: '3.8'
+
+# Docker Compose configuration for Turnstile-enabled LibreChat
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.turnstile.yml up -d
+
+services:
+  api:
+    environment:
+      # Turnstile Configuration
+      # Replace with your actual Cloudflare Turnstile keys
+      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
+      
+      # Optional Turnstile Configuration
+      - TURNSTILE_LANGUAGE=${TURNSTILE_LANGUAGE:-auto}
+      - TURNSTILE_SIZE=${TURNSTILE_SIZE:-normal}
+      - TURNSTILE_THEME=${TURNSTILE_THEME:-auto}
+    
+    # Add labels for documentation
+    labels:
+      - "librechat.feature=turnstile"
+      - "librechat.turnstile.enabled=true"
+      - "librechat.description=LibreChat with Cloudflare Turnstile protection"
+
+  # Optional: Add environment variables to client service if needed
+  client:
+    environment:
+      # Client-side Turnstile configuration is handled by the API
+      - VITE_TURNSTILE_ENABLED=true
+    labels:
+      - "librechat.feature=turnstile"
+      - "librechat.turnstile.client=true"
+
+# Optional: Add a health check service to validate Turnstile configuration
+  turnstile-validator:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./scripts:/app/scripts
+      - ./package.json:/app/package.json
+    environment:
+      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
+      - TURNSTILE_LANGUAGE=${TURNSTILE_LANGUAGE:-auto}
+      - TURNSTILE_SIZE=${TURNSTILE_SIZE:-normal}
+      - TURNSTILE_THEME=${TURNSTILE_THEME:-auto}
+    command: ["node", "scripts/validate-docker-turnstile.js"]
+    profiles:
+      - validate
+    labels:
+      - "librechat.feature=turnstile"
+      - "librechat.service=validator"
+
+# Usage Examples:
+# 
+# 1. Start with Turnstile (using environment variables):
+#    export TURNSTILE_SITE_KEY=your_site_key
+#    export TURNSTILE_SECRET_KEY=your_secret_key
+#    docker-compose -f docker-compose.yml -f docker-compose.turnstile.yml up -d
+#
+# 2. Start with validation:
+#    docker-compose -f docker-compose.yml -f docker-compose.turnstile.yml --profile validate up
+#
+# 3. Validate configuration only:
+#    docker-compose -f docker-compose.turnstile.yml run --rm turnstile-validator
+#
+# 4. Use with .env file:
+#    cp .env.turnstile.example .env
+#    # Edit .env with your keys
+#    docker-compose -f docker-compose.yml -f docker-compose.turnstile.yml up -d
