@@ -86,7 +86,7 @@
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
   - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
-    - OpenRouter, Perplexity, ShuttleAI, Deepseek, Qwen, and more
+    - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
 - 💾 预设与上下文管理
   - 创建、保存和分享自定义预设。
