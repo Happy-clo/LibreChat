@@ -88,16 +88,11 @@
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
     - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
-- 💾 预设与上下文管理
-  - 创建、保存和分享自定义预设。
-  - 在聊天中随时切换 AI 端点和预设。
-  - 编辑、重新提交和继续消息，实现对话分支。
-  - [分叉消息和对话](https://www.librechat.ai/docs/features/fork) 以进行高级上下文控制。
+- 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
+  - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran
+  - Seamless File Handling: Upload, process, and download files directly
+  - No Privacy Concerns: Fully isolated and secure execution
 
-- 🗣️ **语音与音频**：  
-  - 通过语音识别和语音合成进行免提聊天  
-  - 自动发送和播放音频  
-  - 支持 OpenAI、Azure OpenAI 和 Elevenlabs
 - 🔦 **Agents & Tools Integration**:  
   - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
     - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
@@ -112,9 +107,9 @@
 - 🔍 **搜索与发现**：  
   - 搜索所有消息/对话
 
-- 👥 **多用户与安全访问**：
-  - 多用户、安全的 OAuth2、LDAP 和电子邮件登录支持
-  - 内置审核和令牌开销工具
+- 👥 **Multi-User & Secure Access**:
+  - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
+  - Built-in Moderation, and Token spend tools
 
 - ⚙️ **配置与部署**：  
   - 配置代理、反向代理、Docker 和多种部署选项  
@@ -128,7 +123,7 @@
 
 ---
 
-## 🪶 全方位 AI 对话与 LibreChat
+## 🪶 All-In-One AI Conversations with LibreChat
 
 LibreChat 将助理 AI 的未来与 OpenAI 的 ChatGPT 革命性技术结合在一起。庆祝原创样式，LibreChat 使您能够集成多个 AI 模型。它还集成并增强了原始客户端的功能，如对话和消息搜索、提示模板和插件。
 
