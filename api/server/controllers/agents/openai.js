@@ -1072,7 +1072,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         signal: execution.signal,
         customHandlers: handlers,
         requestBody: mcpRequestBody,
-        user: { id: userId },
+        user: { ...createSafeUser(req.user), id: userId },
+        traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
