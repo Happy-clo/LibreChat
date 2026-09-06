@@ -77,6 +77,23 @@ interface ChatFormProps {
   stopGenerating: () => void;
 }
 
+/** Targets that own focus themselves: form fields and links, popup disclosures
+ * (Ariakit and Radix both emit `aria-haspopup`), and popup content, which React
+ * bubbles through portals. */
+const focusOwningTargetSelector = [
+  'a',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  '[aria-haspopup]:not([aria-haspopup="false"])',
+  '[role="combobox"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+].join(', ');
+
 const ChatForm = memo(function ChatForm({
   index,
   placeholder,
@@ -162,13 +179,37 @@ const ChatForm = memo(function ChatForm({
     [requiresKey, invalidAssistant],
   );
 
-  const handleContainerClick = useCallback(() => {
-    /** Check if the device is a touchscreen */
+  /** Skipped on touchscreens so a tap does not raise the keyboard. */
+  const focusTextArea = useCallback(() => {
     if (window.matchMedia?.('(pointer: coarse)').matches) {
       return;
     }
     textAreaRef.current?.focus();
   }, []);
+
+  /** The surface returns focus to the textarea after any click (send, stop, badge
+   * toggles), except when the target owns focus itself or opens a popup. Ariakit
+   * records `document.activeElement` at open time as a menu's disclosure, so
+   * refocusing the textarea behind a menu button made the textarea the disclosure
+   * and the menu could never close on textarea interaction (#15624). */
+  const handleContainerClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const owner =
+        event.target instanceof Element ? event.target.closest(focusOwningTargetSelector) : null;
+      if (owner && !owner.contains(event.currentTarget)) {
+        return;
+      }
+      focusTextArea();
+    },
+    [focusTextArea],
+  );
+
+  /** Actions that consume the composer from inside a popup (the during-run
+   * hovercard) sit in exempted popup content, so they restore focus themselves. */
+  const consumeComposer = useCallback(() => {
+    methods.reset();
+    focusTextArea();
+  }, [methods, focusTextArea]);
 
   const handleFocusOrClick = useCallback(() => {
     if (isCollapsed) {
@@ -498,7 +539,7 @@ const ChatForm = memo(function ChatForm({
           control={methods.control}
           steering={steering}
           getText={() => methods.getValues('text')}
-          onConsumed={() => methods.reset()}
+          onConsumed={consumeComposer}
           disabled={filesLoading}
         />
       );
@@ -592,6 +633,7 @@ const ChatForm = memo(function ChatForm({
               agentId={conversation?.agent_id}
             />
             <div
+              data-testid="composer-surface"
               onClick={handleContainerClick}
               className={cn(
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',
@@ -613,7 +655,9 @@ const ChatForm = memo(function ChatForm({
               {project ? <ProjectLandingChip project={project} /> : null}
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
               <PendingManualSkillsChips conversationId={conversationId} />
-              {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
+              {quotesEnabled && (
+                <PendingQuoteChips conversationId={conversationId} focusComposer={focusTextArea} />
+              )}
               {steering.enabled && (
                 <PendingSteerChips
                   conversationId={conversationId}
@@ -752,7 +796,7 @@ const ChatForm = memo(function ChatForm({
                       <InterruptSteerButton
                         steering={steering}
                         getText={() => methods.getValues('text')}
-                        onConsumed={() => methods.reset()}
+                        onConsumed={consumeComposer}
                         disabled={filesLoading}
                       />
                     </div>

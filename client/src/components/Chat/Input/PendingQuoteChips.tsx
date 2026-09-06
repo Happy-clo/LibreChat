@@ -39,7 +39,14 @@ const CLOSE_DELAY_MS = 120;
  * once the message is sent (the excerpts then re-render as `MessageQuotes` on
  * the user bubble, or inside the steer bubble for a mid-run injection).
  */
-function PendingQuoteChips({ conversationId }: { conversationId: string }) {
+function PendingQuoteChips({
+  conversationId,
+  focusComposer,
+}: {
+  conversationId: string;
+  /** The composer's guarded refocus, which skips touchscreens. */
+  focusComposer?: () => void;
+}) {
   const localize = useLocalize();
   const quotes = useRecoilValue(store.pendingQuotesByConvoId(conversationId));
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
@@ -73,9 +80,34 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
   useEffect(() => cancelClose, [cancelClose]);
 
   const clearAll = useCallback(() => setQuotes([]), [setQuotes]);
+  /** The clicked remove button unmounts with its row, and the composer surface
+   * does not refocus the textarea for clicks inside popup content, so restore
+   * focus here: to the composer once the popup collapses, otherwise to the
+   * remove button now at the same row (or the last one) once React has
+   * re-rendered the list. */
+  const pendingFocusIndexRef = useRef<number | null>(null);
+  useEffect(() => {
+    const index = pendingFocusIndexRef.current;
+    if (index == null) {
+      return;
+    }
+    pendingFocusIndexRef.current = null;
+    const buttons = popover.getState().contentElement?.querySelectorAll('button');
+    if (!buttons?.length) {
+      return;
+    }
+    buttons[Math.min(index, buttons.length - 1)].focus();
+  }, [quotes, popover]);
   const removeAt = useCallback(
-    (index: number) => setQuotes((prev) => prev.filter((_, i) => i !== index)),
-    [setQuotes],
+    (index: number) => {
+      setQuotes((prev) => prev.filter((_, i) => i !== index));
+      if (quotes.length <= 2) {
+        focusComposer?.();
+        return;
+      }
+      pendingFocusIndexRef.current = index;
+    },
+    [setQuotes, quotes.length, focusComposer],
   );
 
   if (quotes.length === 0) {
