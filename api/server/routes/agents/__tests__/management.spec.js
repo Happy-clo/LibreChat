@@ -85,6 +85,8 @@ const mockRequireAgentManagementAuth = jest.fn((req, res, next) => {
   next();
 });
 
+jest.mock('../skills', () => require('express').Router());
+
 jest.mock('../middleware', () => ({
   requireAgentManagementAuth: mockRequireAgentManagementAuth,
 }));
