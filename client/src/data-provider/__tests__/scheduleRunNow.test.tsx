@@ -6,12 +6,17 @@ import type { TConversation, TScheduleRunNowResponse } from 'librechat-data-prov
 import type { InfiniteData } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import {
+  resetTrackedRuns,
+  trackScheduledRun,
+  trackedRunCount,
+  releaseScheduledRun,
+} from '../Schedules/admission';
+import {
   ACTIVE_JOBS_POLL_MS,
   resetActiveJobsGrace,
   getActiveJobsRefetchInterval,
 } from '../SSE/queries';
 import { useRunScheduleNowMutation } from '../Schedules/mutations';
-import { resetTrackedRuns } from '../Schedules/admission';
 import * as sseQueries from '../SSE/queries';
 
 const mockRunScheduleNow = jest.fn<Promise<TScheduleRunNowResponse>, [string]>();
@@ -377,6 +382,43 @@ describe('run-now conversation tracking', () => {
     await settleAdmission();
 
     expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    expect(readList(queryClient).filter((c) => c.conversationId === 'run-convo-1')).toHaveLength(1);
+    queryClient.clear();
+  });
+
+  it('does not retain a one-shot admission without a polling owner', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+
+    void trackScheduledRun(queryClient, 'run-convo-1');
+    await settleAdmission();
+
+    expect(readList(queryClient).some((c) => c.conversationId === 'run-convo-1')).toBe(true);
+    expect(trackedRunCount()).toBe(0);
+    queryClient.clear();
+  });
+
+  it('remembers a landed run until it is released, then probes it again if announced', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+
+    void trackScheduledRun(queryClient, 'run-convo-1', { retain: true });
+    await settleAdmission();
+    void trackScheduledRun(queryClient, 'run-convo-1', { retain: true });
+    await settleAdmission();
+    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    expect(trackedRunCount()).toBe(1);
+
+    releaseScheduledRun('run-convo-1');
+    expect(trackedRunCount()).toBe(0);
+    void trackScheduledRun(queryClient, 'run-convo-1', { retain: true });
+    await settleAdmission();
+
+    expect(mockGetConversationById).toHaveBeenCalledTimes(2);
     expect(readList(queryClient).filter((c) => c.conversationId === 'run-convo-1')).toHaveLength(1);
     queryClient.clear();
   });
