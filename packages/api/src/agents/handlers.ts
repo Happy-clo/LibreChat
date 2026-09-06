@@ -34,6 +34,7 @@ import type {
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
+import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
@@ -634,6 +635,7 @@ export interface ToolExecuteOptions {
     stderr?: string;
     session_id?: string;
     files?: SandboxFileRef[];
+    artifact_delivery?: ArtifactDeliveryFailure;
   } | null>;
 }
 
@@ -2836,6 +2838,13 @@ async function writeSandboxTextForAuthoring({
   }
   if (!writeResult) {
     return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
+  }
+  if (writeResult.artifact_delivery) {
+    const { attempted, failed } = writeResult.artifact_delivery;
+    return errorResult(
+      tc,
+      `Wrote "${filePath}" in the sandbox, but ${failed} of ${attempted} generated files could not be persisted. The file is not guaranteed to be available to later calls or downloadable. The execution may have had side effects; do not retry automatically.`,
+    );
   }
 
   const action = created ? 'Created' : 'Updated';
