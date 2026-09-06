@@ -20,8 +20,13 @@ import type {
   Model,
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole, CodeEnvironmentDocument } from '..';
+import {
+  createAgentMethods,
+  EDGE_CLEANUP_BATCH,
+  EDGE_CLEANUP_MAX_SWEEPS,
+  type AgentMethods,
+} from './agent';
 import { withCodeEnvironmentReference } from './codeEnvironment';
-import { createAgentMethods, type AgentMethods } from './agent';
 import { tenantStorage } from '~/config/tenantContext';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
@@ -1263,6 +1268,207 @@ describe('Agent Methods', () => {
           description: 'Unrelated bulk edge',
         },
       ]);
+    });
+
+    test('keeps an edge added to the graph while the cleanup was running', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
+      const sourceAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const addedAgentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await createAgent({
+        id: graphAgentId,
+        name: 'Agent Edited During Cleanup',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        edges: [
+          { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' },
+          { from: sourceAgentId, to: targetAgentId, edgeType: 'handoff' },
+        ],
+      });
+      /** Lands a concurrent edit between the cleanup's read and its first write,
+       * through the driver so the cleanup's own compare-and-set is what must
+       * notice it. */
+      const prototype = mongoose.mongo.Collection.prototype;
+      const bulkWrite = prototype.bulkWrite;
+      let edited = false;
+      prototype.bulkWrite = async function (this: mongoose.mongo.Collection, operations, options) {
+        if (!edited && this.collectionName === 'agents') {
+          edited = true;
+          await Agent.updateOne(
+            { id: graphAgentId },
+            { $push: { edges: { from: sourceAgentId, to: addedAgentId, edgeType: 'handoff' } } },
+          );
+        }
+        return bulkWrite.call(this, operations, options);
+      };
+
+      try {
+        await deleteAgent({ id: deletedAgentId });
+      } finally {
+        prototype.bulkWrite = bulkWrite;
+      }
+
+      expect(edited).toBe(true);
+      const graphAgent = await getAgent({ id: graphAgentId });
+      expect(graphAgent!.edges).toEqual([
+        { from: sourceAgentId, to: targetAgentId, edgeType: 'handoff' },
+        { from: sourceAgentId, to: addedAgentId, edgeType: 'handoff' },
+      ]);
+    });
+
+    test('cleans every graph when the references span more than one page', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const graphCount = EDGE_CLEANUP_BATCH + 1;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Popular Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await Agent.insertMany(
+        Array.from({ length: graphCount }, (_, index) => ({
+          id: `agent_${uuidv4()}`,
+          name: `Paged Graph ${index}`,
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          edges: [
+            { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' },
+            { from: targetAgentId, to: [deletedAgentId, targetAgentId], edgeType: 'direct' },
+          ],
+        })),
+      );
+
+      await deleteAgent({ id: deletedAgentId });
+
+      const graphs = await Agent.find({ name: /^Paged Graph / })
+        .select('edges')
+        .lean<Pick<IAgent, 'edges'>[]>();
+      expect(graphs).toHaveLength(graphCount);
+      const expectedEdges = [{ from: targetAgentId, to: [targetAgentId], edgeType: 'direct' }];
+      graphs.forEach((graph) => expect(graph.edges).toEqual(expectedEdges));
+    });
+
+    test('retries a compare-and-set miss the cursor has already passed', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const addedAgentId = `agent_${uuidv4()}`;
+      const graphCount = EDGE_CLEANUP_BATCH + 1;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Popular Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      const graphIds = Array.from({ length: graphCount }, () => `agent_${uuidv4()}`);
+      await Agent.insertMany(
+        graphIds.map((id, index) => ({
+          id,
+          name: `Cursor Graph ${index}`,
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          edges: [
+            { from: deletedAgentId, to: [deletedAgentId, targetAgentId], edgeType: 'direct' },
+          ],
+        })),
+      );
+      const [editedGraphId] = graphIds;
+      /** Lands a concurrent edit on a first-page graph between the cleanup's read
+       * and its first write, so that graph's compare-and-set misses while the
+       * cursor moves on past it. */
+      const prototype = mongoose.mongo.Collection.prototype;
+      const bulkWrite = prototype.bulkWrite;
+      let edited = false;
+      prototype.bulkWrite = async function (this: mongoose.mongo.Collection, operations, options) {
+        if (!edited && this.collectionName === 'agents') {
+          edited = true;
+          await Agent.updateOne(
+            { id: editedGraphId },
+            { $push: { edges: { from: targetAgentId, to: addedAgentId, edgeType: 'handoff' } } },
+          );
+        }
+        return bulkWrite.call(this, operations, options);
+      };
+
+      try {
+        await deleteAgent({ id: deletedAgentId });
+      } finally {
+        prototype.bulkWrite = bulkWrite;
+      }
+
+      expect(edited).toBe(true);
+      expect(
+        await Agent.countDocuments({
+          $or: [{ 'edges.from': deletedAgentId }, { 'edges.to': deletedAgentId }],
+        }),
+      ).toBe(0);
+      const editedGraph = await getAgent({ id: editedGraphId });
+      expect(editedGraph!.edges).toEqual([
+        { from: targetAgentId, to: addedAgentId, edgeType: 'handoff' },
+      ]);
+    });
+
+    test('gives up after a bounded number of sweeps when references keep being added', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await createAgent({
+        id: graphAgentId,
+        name: 'Graph That Keeps Referencing',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        edges: [{ from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' }],
+      });
+      /** Re-adds a reference AFTER every successful write, so every sweep makes
+       * progress and the stall bound never trips; only the sweep bound ends it. */
+      const prototype = mongoose.mongo.Collection.prototype;
+      const bulkWrite = prototype.bulkWrite;
+      let writes = 0;
+      prototype.bulkWrite = async function (this: mongoose.mongo.Collection, operations, options) {
+        const result = await bulkWrite.call(this, operations, options);
+        if (this.collectionName === 'agents') {
+          writes += 1;
+          await Agent.updateOne(
+            { id: graphAgentId },
+            { $push: { edges: { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' } } },
+          );
+        }
+        return result;
+      };
+
+      try {
+        await deleteAgent({ id: deletedAgentId });
+      } finally {
+        prototype.bulkWrite = bulkWrite;
+      }
+
+      expect(await getAgent({ id: deletedAgentId })).toBeNull();
+      expect(writes).toBeLessThanOrEqual(EDGE_CLEANUP_MAX_SWEEPS);
     });
 
     test('should remove agent from user favorites when agent is deleted', async () => {
