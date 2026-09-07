@@ -1,6 +1,14 @@
 import type { ParsedServerConfig } from '~/mcp/types';
 import { cleanupMCPServerOAuth, getMCPServerGeneration } from './cleanup';
 
+const createFlowManager = () => ({
+  acquireLease: jest.fn().mockResolvedValue({
+    generation: 1,
+    release: jest.fn().mockResolvedValue(undefined),
+  }),
+  deleteFlow: jest.fn(),
+});
+
 describe('getMCPServerGeneration', () => {
   it('includes the durable database identity for user servers', () => {
     const config = { type: 'streamable-http', url: 'https://example.com', dbId: 'server-1' };
@@ -55,7 +63,7 @@ describe('cleanupMCPServerOAuth', () => {
         userId: 'user-1',
         pluginKey: 'mcp_test-server',
         dependencies: {
-          flowManager: { deleteFlow: jest.fn() } as never,
+          flowManager: createFlowManager() as never,
           oauthHandler: {
             generateFlowId: jest.fn(),
             generateTokenFlowId: jest.fn(),
@@ -122,7 +130,7 @@ describe('cleanupMCPServerOAuth', () => {
       pluginKey: 'mcp_test-server',
       serverConfigOverride: { type: 'streamable-http', url: 'https://example.com/mcp' },
       dependencies: {
-        flowManager: { deleteFlow: jest.fn() } as never,
+        flowManager: createFlowManager() as never,
         oauthHandler: {
           generateFlowId: jest.fn(() => 'user-1:test-server'),
           generateTokenFlowId: jest.fn(() => 'user-1:test-server'),
@@ -151,9 +159,15 @@ describe('cleanupMCPServerOAuth', () => {
 
   it('deletes only token records snapshotted before flow cancellation', async () => {
     const deleteTokens = jest.fn();
-    const findToken = jest.fn(async ({ type }: { type?: string }) =>
-      type === 'mcp_oauth' ? ({ token: 'encrypted-old-access' } as never) : null,
-    );
+    const findToken = jest.fn(async ({ type }: { type?: string }) => {
+      if (type === 'mcp_oauth') {
+        return {
+          token: 'encrypted-old-access',
+          metadata: { credential_set_id: 'partially-versioned' },
+        } as never;
+      }
+      return type === 'mcp_oauth_refresh' ? ({ token: 'encrypted-legacy-refresh' } as never) : null;
+    });
     const deleteUserTokens = jest.fn(
       async ({
         userId,
@@ -192,7 +206,7 @@ describe('cleanupMCPServerOAuth', () => {
         oauth: {},
       },
       dependencies: {
-        flowManager: { deleteFlow: jest.fn() } as never,
+        flowManager: createFlowManager() as never,
         oauthHandler: {
           generateFlowId: jest.fn(() => 'user-1:test-server'),
           generateTokenFlowId: jest.fn(() => 'user-1:test-server'),
@@ -212,7 +226,7 @@ describe('cleanupMCPServerOAuth', () => {
       },
     });
 
-    expect(deleteTokens).toHaveBeenCalledTimes(1);
+    expect(deleteTokens).toHaveBeenCalledTimes(2);
     expect(deleteTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       type: 'mcp_oauth',
@@ -239,7 +253,7 @@ describe('cleanupMCPServerOAuth', () => {
         oauth: {},
       },
       dependencies: {
-        flowManager: { deleteFlow: jest.fn() } as never,
+        flowManager: createFlowManager() as never,
         oauthHandler: {
           generateFlowId: jest.fn(() => 'user-1:test-server'),
           generateTokenFlowId: jest.fn(() => 'user-1:test-server'),

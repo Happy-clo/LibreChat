@@ -5,9 +5,9 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { MCPOAuthTokens } from './types';
 import { getMCPAppToolsPublicationGeneration } from '~/mcp/toolsChanged';
+import { getMCPOAuthLeaseId, MCPTokenStorage } from './tokens';
 import { MCPOAuthHandler } from './handler';
 import { isOAuthServer } from '~/mcp/utils';
-import { MCPTokenStorage } from './tokens';
 
 export function getMCPServerGeneration(config: ParsedServerConfig): string {
   const definitionGeneration = getMCPAppToolsPublicationGeneration(config);
@@ -119,14 +119,26 @@ export async function cleanupDeletedMCPServerOAuthUsers({
     const batch = affectedUserIds.slice(offset, offset + OAUTH_CLEANUP_CONCURRENCY);
     const results = await Promise.allSettled(
       batch.map(async (userId) => {
-        await fenceAndDisconnectUser?.(userId);
-        const { allowedDomains, allowedAddresses } = await resolveAllowlists(userId);
-        await uninstallOAuthMCP?.(
-          userId,
-          `${Constants.mcp_prefix}${serverName}`,
-          { mcpSettings: { allowedDomains, allowedAddresses } },
-          serverConfig,
-        );
+        const userFailures: unknown[] = [];
+        try {
+          await fenceAndDisconnectUser?.(userId);
+        } catch (error) {
+          userFailures.push(error);
+        }
+        try {
+          const { allowedDomains, allowedAddresses } = await resolveAllowlists(userId);
+          await uninstallOAuthMCP?.(
+            userId,
+            `${Constants.mcp_prefix}${serverName}`,
+            { mcpSettings: { allowedDomains, allowedAddresses } },
+            serverConfig,
+          );
+        } catch (error) {
+          userFailures.push(error);
+        }
+        if (userFailures.length > 0) {
+          throw new Error(`OAuth cleanup failed for user ${userId}`);
+        }
       }),
     );
     for (const result of results) {
@@ -153,7 +165,8 @@ export interface MCPOAuthCleanupDependencies {
   tokenStorage: Pick<
     typeof MCPTokenStorage,
     'deleteUserTokens' | 'getClientInfoAndMetadata' | 'getTokens' | 'assertCredentialSetBinding'
-  >;
+  > &
+    Partial<Pick<typeof MCPTokenStorage, 'beginRefreshTeardown'>>;
   findToken: TokenMethods['findToken'];
   deleteTokens: TokenMethods['deleteTokens'];
   getServerConfig: (serverName: string, userId: string) => Promise<MCPOptions | undefined>;
@@ -256,17 +269,48 @@ interface UninstallParams {
   dependencies: MCPOAuthCleanupDependencies;
 }
 
-export async function cleanupMCPServerOAuth({
+export async function cleanupMCPServerOAuth(params: UninstallParams): Promise<void> {
+  const { userId, pluginKey, dependencies } = params;
+  if (!pluginKey.startsWith(Constants.mcp_prefix)) {
+    return;
+  }
+  const serverName = pluginKey.replace(Constants.mcp_prefix, '');
+  const releaseRefreshTeardown =
+    (await dependencies.tokenStorage.beginRefreshTeardown?.(userId, serverName)) ?? (() => {});
+  let teardownLease: Awaited<ReturnType<typeof dependencies.flowManager.acquireLease>> = null;
+  let leaseError: unknown;
+  try {
+    try {
+      teardownLease = await dependencies.flowManager.acquireLease(
+        getMCPOAuthLeaseId(userId, serverName),
+        { advanceGeneration: true, waitMs: 60_000 },
+      );
+      if (!teardownLease) {
+        leaseError = new Error(`Unable to acquire OAuth teardown lease for ${serverName}`);
+      }
+    } catch (error) {
+      leaseError = error;
+    }
+    await cleanupMCPServerOAuthWithFenceHeld(params);
+    if (leaseError) {
+      throw leaseError;
+    }
+  } finally {
+    try {
+      await teardownLease?.release();
+    } finally {
+      releaseRefreshTeardown();
+    }
+  }
+}
+
+async function cleanupMCPServerOAuthWithFenceHeld({
   userId,
   pluginKey,
   appConfig,
   serverConfigOverride,
   dependencies,
 }: UninstallParams): Promise<void> {
-  if (!pluginKey.startsWith(Constants.mcp_prefix)) {
-    return;
-  }
-
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   /** Snapshot exact encrypted values before cancelling the flow. Later cleanup can then remove
    * this authorization without matching credentials written by a replacement attempt. */
@@ -284,6 +328,7 @@ export async function cleanupMCPServerOAuth({
     return typeof metadata.credential_set_id === 'string' ? metadata.credential_set_id : undefined;
   };
   let tokenRecords = new Map<string, TokenRecord>();
+  let snapshotSupportsRevocation = false;
   /** The client record is the credential-set commit marker. Bookending the remaining reads with
    * it prevents teardown from combining records on opposite sides of a concurrent callback. */
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -309,11 +354,11 @@ export async function cleanupMCPServerOAuth({
     const clientUnchanged =
       clientBefore?.token === clientAfter?.token &&
       getCredentialSetId(clientBefore) === getCredentialSetId(clientAfter);
-    const generationCoherent =
-      generations.length === 0 ||
-      (generations.length === presentRecords.length && new Set(generations).size === 1);
+    const generationCoherent = new Set(generations).size <= 1;
     if (clientUnchanged && generationCoherent) {
       tokenRecords = candidate;
+      snapshotSupportsRevocation =
+        presentRecords.length > 0 && generations.length === presentRecords.length;
       break;
     }
   }
@@ -359,6 +404,7 @@ export async function cleanupMCPServerOAuth({
       });
       const clientKey = `mcp_oauth_client:mcp:${serverName}:client`;
       if (
+        !snapshotSupportsRevocation ||
         clientTokenData?.clientMetadata.credential_set_id !== tokenGenerationSnapshot.get(clientKey)
       ) {
         clientTokenData = null;

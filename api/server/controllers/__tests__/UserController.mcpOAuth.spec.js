@@ -141,6 +141,10 @@ function createRequest() {
 
 function setupMCPMocks() {
   const flowManager = {
+    acquireLease: jest.fn().mockResolvedValue({
+      generation: 1,
+      release: jest.fn().mockResolvedValue(undefined),
+    }),
     deleteFlow: jest.fn().mockResolvedValue(true),
   };
   const mcpManager = {
@@ -236,6 +240,9 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
       serverName: 'test-server',
       findToken: expect.any(Function),
     });
+    expect(mcpManager.disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      MCPTokenStorage.getClientInfoAndMetadata.mock.invocationCallOrder[0],
+    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',

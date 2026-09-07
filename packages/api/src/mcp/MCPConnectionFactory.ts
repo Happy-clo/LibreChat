@@ -19,6 +19,7 @@ import {
   MCPTokenStorage,
   MCPOAuthHandler,
   getMCPServerGeneration,
+  getMCPOAuthLeaseId,
   OboTokenResolutionError,
   ReauthenticationRequiredError,
   resolveOboToken,
@@ -746,6 +747,7 @@ export class MCPConnectionFactory {
               deleteTokens: this.tokenMethods!.deleteTokens,
               refreshTokens: this.createRefreshTokensFunction(),
               singleFlightScope: this.getOAuthBindingDigest(),
+              flowManager: this.flowManager,
             }),
           );
         },
@@ -938,6 +940,7 @@ export class MCPConnectionFactory {
           onRefreshSuccess: async (refreshed) => {
             await this.invalidateGetTokensFlow(refreshed);
           },
+          flowManager: this.flowManager,
         }),
       );
 
@@ -1236,6 +1239,19 @@ export class MCPConnectionFactory {
         return;
       }
 
+      const oauthLeaseId = getMCPOAuthLeaseId(this.userId!, this.serverName, this.tenantId);
+      let oauthLeaseGeneration: number | null;
+      try {
+        oauthLeaseGeneration = await this.flowManager!.getLeaseGeneration(oauthLeaseId);
+      } catch {
+        connection.emit('oauthFailed', new Error('OAuth teardown fence unavailable'));
+        return;
+      }
+      if (oauthLeaseGeneration === null) {
+        connection.emit('oauthFailed', new Error('OAuth teardown in progress'));
+        return;
+      }
+
       if (isRequestRecovery && recoveryPhase === 'terminal') {
         logger.warn(`${this.logPrefix} OAuth recovery phase budget exhausted`);
         connection.emit('oauthFailed', new Error('OAuth recovery phase budget exhausted'));
@@ -1256,6 +1272,16 @@ export class MCPConnectionFactory {
 
       if (isRequestRecovery) {
         recoveryPhase = 'terminal';
+      }
+
+      /** Teardown holds this gate until its credential and flow cleanup finishes. A refresh
+       * suppressed by that gate must not fall through and create a replacement OAuth flow. */
+      if (
+        this.userId &&
+        MCPTokenStorage.isRefreshTeardownActive(this.userId, this.serverName, this.tenantId)
+      ) {
+        connection.emit('oauthFailed', new Error('OAuth teardown in progress'));
+        return;
       }
 
       // Silent refresh failed and we're about to fall through to interactive
@@ -1295,7 +1321,18 @@ export class MCPConnectionFactory {
                 logger.info(
                   `${this.logPrefix} Re-issuing stored authorization URL while reusing PENDING flow`,
                 );
-                await this.oauthStart(storedAuthUrl, { expiresAt });
+                const replayLease = await this.flowManager!.acquireLease(oauthLeaseId, {
+                  expectedGeneration: oauthLeaseGeneration,
+                });
+                if (!replayLease) {
+                  connection.emit('oauthFailed', new Error('OAuth replay superseded by teardown'));
+                  return;
+                }
+                try {
+                  await this.oauthStart(storedAuthUrl, { expiresAt });
+                } finally {
+                  await replayLease.release();
+                }
               }
               connection.emit('oauthFailed', new Error('Pending OAuth flow reused - return early'));
               return;
@@ -1341,12 +1378,27 @@ export class MCPConnectionFactory {
             tenantId: this.tenantId,
             serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
           };
-          await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
-          await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
+          const publicationLease = await this.flowManager!.acquireLease(oauthLeaseId, {
+            expectedGeneration: oauthLeaseGeneration,
+          });
+          if (!publicationLease) {
+            connection.emit('oauthFailed', new Error('OAuth initiation superseded by teardown'));
+            return;
+          }
+          try {
+            await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
+            await MCPOAuthHandler.storeStateMapping(
+              flowMetadata.state,
+              newFlowId,
+              this.flowManager!,
+            );
+          } finally {
+            await publicationLease.release();
+          }
 
           // Start monitoring in background — createFlow will find the existing PENDING state
           // written by initFlow above, so metadata arg is unused (pass {} to make that explicit)
-          this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}).catch(async (error) => {
+          this.waitForSharedOAuthFlow(newFlowId).catch(async (error) => {
             logger.debug(`${this.logPrefix} OAuth flow monitor ended`);
             await this.clearStaleClientIfRejected(flowMetadata.reusedClientCredentialSetId, error);
           });
@@ -1366,7 +1418,7 @@ export class MCPConnectionFactory {
       }
 
       // Normal OAuth handling - wait for completion
-      const result = await this.handleOAuthRequired();
+      const result = await this.handleOAuthRequired(oauthLeaseGeneration);
 
       if (result?.tokens) {
         const { tokens } = result;
@@ -1593,7 +1645,7 @@ export class MCPConnectionFactory {
   }
 
   /** Manages OAuth flow initiation and completion */
-  protected async handleOAuthRequired(): Promise<{
+  protected async handleOAuthRequired(expectedLeaseGeneration?: number): Promise<{
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
     metadata?: OAuthMetadata;
@@ -1614,6 +1666,13 @@ export class MCPConnectionFactory {
       );
       logger.warn(`${this.logPrefix} OAuth credentials must be configured`);
       return null;
+    }
+
+    const oauthLeaseId = getMCPOAuthLeaseId(this.userId!, this.serverName, this.tenantId);
+    const oauthLeaseGeneration =
+      expectedLeaseGeneration ?? (await this.flowManager.getLeaseGeneration(oauthLeaseId));
+    if (oauthLeaseGeneration === null) {
+      throw new Error('OAuth teardown in progress');
     }
 
     let reusedStoredClient = false;
@@ -1650,7 +1709,17 @@ export class MCPConnectionFactory {
               logger.info(
                 `${this.logPrefix} Re-issuing stored authorization URL to caller while joining PENDING flow`,
               );
-              await this.oauthStart(storedAuthUrl, { expiresAt });
+              const replayLease = await this.flowManager.acquireLease(oauthLeaseId, {
+                expectedGeneration: oauthLeaseGeneration,
+              });
+              if (!replayLease) {
+                throw new Error('OAuth replay superseded by teardown');
+              }
+              try {
+                await this.oauthStart(storedAuthUrl, { expiresAt });
+              } finally {
+                await replayLease.release();
+              }
             }
 
             reusedStoredClient = flowMeta?.reusedStoredClient === true;
@@ -1691,18 +1760,28 @@ export class MCPConnectionFactory {
             !isTokenExpired &&
             this.isCurrentServerOAuthFlow(flowMeta)
           ) {
+            const reuseLease = await this.flowManager.acquireLease(oauthLeaseId, {
+              expectedGeneration: oauthLeaseGeneration,
+            });
+            if (!reuseLease) {
+              throw new Error('Cached OAuth result superseded by teardown');
+            }
             logger.debug(
               `${this.logPrefix} Found non-stale COMPLETED OAuth flow, reusing cached tokens`,
             );
-            return {
-              tokens: cachedTokens,
-              clientInfo: flowMeta?.clientInfo,
-              metadata: flowMeta?.metadata,
-              resourceMetadata: flowMeta?.resourceMetadata,
-              clientSource: flowMeta?.clientSource,
-              reusedStoredClient: flowMeta?.reusedStoredClient,
-              reusedClientCredentialSetId: flowMeta?.reusedClientCredentialSetId,
-            };
+            try {
+              return {
+                tokens: cachedTokens,
+                clientInfo: flowMeta?.clientInfo,
+                metadata: flowMeta?.metadata,
+                resourceMetadata: flowMeta?.resourceMetadata,
+                clientSource: flowMeta?.clientSource,
+                reusedStoredClient: flowMeta?.reusedStoredClient,
+                reusedClientCredentialSetId: flowMeta?.reusedClientCredentialSetId,
+              };
+            } finally {
+              await reuseLease.release();
+            }
           }
         }
 
@@ -1749,8 +1828,18 @@ export class MCPConnectionFactory {
         tenantId: this.tenantId,
         serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
       };
-      await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
-      await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
+      const publicationLease = await this.flowManager.acquireLease(oauthLeaseId, {
+        expectedGeneration: oauthLeaseGeneration,
+      });
+      if (!publicationLease) {
+        throw new Error('OAuth initiation superseded by teardown');
+      }
+      try {
+        await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
+        await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
+      } finally {
+        await publicationLease.release();
+      }
 
       if (typeof this.oauthStart === 'function') {
         logger.info(`${this.logPrefix} OAuth flow started, issued authorization URL to user`);
@@ -1785,7 +1874,7 @@ export class MCPConnectionFactory {
   }
 
   private waitForSharedOAuthFlow(flowId: string): Promise<MCPOAuthTokens | null> {
-    const flow = this.flowManager!.createFlow(flowId, 'mcp_oauth', {});
+    const flow = this.flowManager!.createFlow(flowId, 'mcp_oauth', {}, undefined, false);
     const signal = this.signal;
     if (!signal) {
       return flow;
