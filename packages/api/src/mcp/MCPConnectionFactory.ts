@@ -18,6 +18,7 @@ import type * as t from './types';
 import {
   MCPTokenStorage,
   MCPOAuthHandler,
+  getMCPServerGeneration,
   OboTokenResolutionError,
   ReauthenticationRequiredError,
   resolveOboToken,
@@ -55,6 +56,8 @@ type OAuthRecoveryPhase = 'silent-refresh' | 'interactive' | 'terminal';
 export class MCPConnectionFactory {
   protected readonly serverName: string;
   protected readonly serverConfig: t.MCPOptions;
+  /** Unresolved definition used for lifecycle fencing across request-specific substitutions. */
+  protected readonly serverDefinition: t.MCPOptions;
   protected readonly logPrefix: string;
   protected readonly useOAuth: boolean;
   protected readonly useSSRFProtection: boolean;
@@ -177,7 +180,9 @@ export class MCPConnectionFactory {
       scopes: process.env.GRAPH_API_SCOPES,
     });
 
-    return serverConfig === basic.serverConfig ? basic : { ...basic, serverConfig };
+    return serverConfig === basic.serverConfig
+      ? basic
+      : { ...basic, serverConfig, serverDefinition: basic.serverDefinition ?? basic.serverConfig };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
@@ -413,6 +418,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ) {
+    this.serverDefinition = basic.serverDefinition ?? basic.serverConfig;
     this.serverConfig = basic.skipEnvProcessing
       ? basic.serverConfig
       : processMCPEnv({
@@ -1329,7 +1335,12 @@ export class MCPConnectionFactory {
           }
 
           // Store flow state BEFORE redirecting so the callback can find it
-          const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+          const metadataWithUrl = {
+            ...flowMetadata,
+            authorizationUrl,
+            tenantId: this.tenantId,
+            serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
+          };
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
           await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
 
@@ -1732,7 +1743,12 @@ export class MCPConnectionFactory {
       reusedClientCredentialSetId = flowMetadata.reusedClientCredentialSetId;
 
       // Store flow state BEFORE redirecting so the callback can find it
-      const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+      const metadataWithUrl = {
+        ...flowMetadata,
+        authorizationUrl,
+        tenantId: this.tenantId,
+        serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
+      };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
       await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
 
