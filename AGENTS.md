@@ -10,6 +10,30 @@ reaches it at the next sync. Pull requests opened against `main` are retargeted 
 default branch, so close linked issues by hand. Worktrees share one stash stack, so never use a bare
 `git stash pop`. See the detailed policy in `CLAUDE.md` under "Branching and Pull Requests".
 
+Write the description for a reader who has not followed the branch: what breaks, what triggers it,
+how it behaves after the change, then one or two views of the mechanism — a focused diff, a call
+tree, a shallow file tree, or a Mermaid sequence. Keep only what the change carries, and describe
+the code as it stands rather than narrating earlier commits or review rounds. The formats and
+examples live in `.github/pull_request_template.md`.
+
+## Review and completion
+
+Read the inline review threads themselves — a summary comment or notification list omits findings.
+Audit each one against the current code, fix what is valid, and reject what is obsolete in a reply
+that says why. After each round: focused tests, `npx tsc --noEmit` in every workspace you changed,
+push, then request the next review naming the pull request's exact remote head — a clean review of
+an earlier head says nothing about what you just pushed, and CI runs on its own clock. After two
+actionable rounds, stop patching thread by thread and read the subsystem by invariant instead.
+Which reviewer and what phrase triggers it will change; that the review must cover the exact pushed
+head will not.
+
+A clean review is one completion signal, not the definition of done. Ship the observable experience
+— loading, empty, success, failure, cancellation, retry, restored session — with strings localized,
+accessibility intact, defaults and stored data preserved, and no backend capability left without a
+frontend entry point. Report the pushed head, what you ran locally, CI state, the review result at
+that head, and any finding you rejected with the reasoning. See `CLAUDE.md` under "Review and
+Completion".
+
 ## Verification
 
 For startup, auth, config, file, or message-loading changes, avoid serial database
