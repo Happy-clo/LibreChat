@@ -67,6 +67,10 @@ const {
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
+  LIBRECHAT_CHECKPOINT_OWNER_KEY,
+  LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY,
+  LIBRECHAT_LEGACY_CHECKPOINT_KEY,
+  checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
@@ -4453,6 +4457,13 @@ class AgentClient extends BaseClient {
           // into its physical namespace while tools keep the conversation id.
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
+          [LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY]:
+            (this.user ?? this.options.req.user?.id)
+              ? checkpointOwnerNamespacePrefix(
+                  this.user ?? this.options.req.user?.id,
+                  resolveRequestTenantId(this.options.req),
+                )
+              : undefined,
           ...(this.eventActorCheckpointId == null
             ? {}
             : { checkpoint_id: this.eventActorCheckpointId }),
@@ -4460,6 +4471,13 @@ class AgentClient extends BaseClient {
             ? {}
             : {
                 [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: this.eventActorInvocationId,
+                [LIBRECHAT_CHECKPOINT_OWNER_KEY]: checkpointOwnerNamespacePrefix(
+                  this.options.req.user.id,
+                  this.options.req._agentEventBindingTenantId,
+                ),
+                ...(this.eventActorCheckpointId == null
+                  ? {}
+                  : { [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: this.eventActorCheckpointId }),
                 event_actor_invocation_id: this.eventActorInvocationId,
                 event_actor_depth: 1,
               }),
@@ -5227,6 +5245,13 @@ class AgentClient extends BaseClient {
           thread_id: this.conversationId,
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
+          [LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY]:
+            (this.user ?? this.options.req.user?.id)
+              ? checkpointOwnerNamespacePrefix(
+                  this.user ?? this.options.req.user?.id,
+                  resolveRequestTenantId(this.options.req),
+                )
+              : undefined,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,

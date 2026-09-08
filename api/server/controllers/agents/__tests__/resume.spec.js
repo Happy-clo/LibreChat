@@ -857,30 +857,41 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       },
     );
 
-    it('fails closed when a versioned job marker no longer matches canonical suspension', async () => {
-      configureEventActorResume();
-      mockGenerationJobManager.getJob.mockResolvedValue(
-        makeToolApprovalJob({
-          metadata: {
-            agentEventSuspension: { version: 1, suspensionId: 'stale', attempt: 0 },
-          },
-        }),
-      );
-      mockGetAgentEventActorSnapshot.mockResolvedValue({
-        state: null,
-        epoch: 1,
-        legacyTurn: null,
-        reconciliations: [],
-        suspension: null,
-      });
+    it.each([null, 'pending_owned', 'claimed_owned'])(
+      'does not consume approval for an unsupported raw suspension state: %s',
+      async (status) => {
+        configureEventActorResume();
+        mockGenerationJobManager.getJob.mockResolvedValue(
+          makeToolApprovalJob({
+            metadata: {
+              agentEventSuspension: { version: 1, suspensionId: 'stale', attempt: 0 },
+            },
+          }),
+        );
+        mockGetAgentEventActorSnapshot.mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension:
+            status == null
+              ? null
+              : {
+                  status,
+                  actionId: ACTION_ID,
+                  jobCreatedAt: 1000,
+                  suspension: { suspensionId: 'stale', attempt: 0 },
+                },
+        });
 
-      const res = await post(approveBody());
+        const res = await post(approveBody());
 
-      expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_SUSPENSION_STALE' });
-      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
-      expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
-    });
+        expect(res.status).toBe(409);
+        expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_SUSPENSION_STALE' });
+        expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+        expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
+      },
+    );
 
     it('fails promptly when suspension validation rejects before the job claim callback', async () => {
       configureEventActorResume();
@@ -1071,6 +1082,25 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           checkpointNamespace: '1000',
         },
       });
+
+    it('persists the server namespace when a scheduled approval pauses again', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ pendingApproval: { actionId: NEXT_ACTION_ID } }),
+        userMCPAuthMap: {},
+      });
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scheduleId: 'schedule-1',
+          status: 'requires_action',
+          checkpointNamespace: '1000',
+        }),
+      );
+    });
 
     it('settles and prunes a scheduled occurrence terminalized by recovery validation', async () => {
       const scheduledJob = makeScheduledJob();
