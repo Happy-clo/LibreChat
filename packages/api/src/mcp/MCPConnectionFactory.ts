@@ -24,9 +24,18 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
+import {
+  isDirectOpenIDBearerRecoveryEnabled,
+  resolveDirectOpenIDBearerConfig,
+  usesDirectOpenIDBearerRecovery,
+} from './openid';
+import {
+  isOAuthAuthenticationError,
+  isMCPTransportAuthenticationError,
+  MCPAuthenticationRejectedError,
+} from './errors';
 import { createDeadlineAbortSignal, isClientRejectionMessage, isOAuthServer } from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
-import { isOAuthAuthenticationError } from './errors';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -37,6 +46,7 @@ export interface ToolDiscoveryResult {
   connection: MCPConnection | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  authenticationError?: unknown;
 }
 
 type OAuthRequiredEvent = {
@@ -65,6 +75,7 @@ export class MCPConnectionFactory {
   protected readonly allowedDomains?: string[] | null;
   protected readonly allowedAddresses?: string[] | null;
   protected readonly ephemeralConnection: boolean;
+  protected readonly directBearerRecoveryEnabled: boolean;
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
@@ -79,7 +90,7 @@ export class MCPConnectionFactory {
   protected readonly deadlineMs?: number;
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
-  protected readonly upstreamTokenProvider?: UpstreamTokenProvider;
+  protected upstreamTokenProvider?: UpstreamTokenProvider;
   protected readonly oboIdentityContext?: AuthIdentityContext;
   /** Why the OBO re-exchange failed, when that is more actionable than the server's 401. */
   private oboRefreshError?: Error;
@@ -122,8 +133,53 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
-    const factory = new this(await this.prepareBasicConnectionOptions(basic, oauth), oauth);
-    return factory.createConnection();
+    const directBearerRecoveryState = basic.directBearerRecoveryState ?? { attempted: false };
+    const directBearerSourceConfig =
+      basic.directBearerSourceConfig ??
+      (isDirectOpenIDBearerRecoveryEnabled(basic.serverConfig)
+        ? (basic.serverConfig as t.ParsedServerConfig)
+        : undefined);
+    const create = async (candidate: t.BasicConnectionOptions): Promise<MCPConnection> => {
+      const prepared = await this.prepareBasicConnectionOptions(
+        { ...candidate, directBearerSourceConfig, directBearerRecoveryState },
+        oauth,
+      );
+      if (directBearerSourceConfig && !directBearerRecoveryState.resolvedConfig) {
+        directBearerRecoveryState.resolvedConfig = prepared.serverConfig;
+      }
+      const factory = new this(prepared, oauth);
+      return factory.createConnection();
+    };
+    if (!directBearerSourceConfig) {
+      return create(basic);
+    }
+
+    try {
+      return await create(basic);
+    } catch (error) {
+      if (!isMCPTransportAuthenticationError(error) || this.isRequestCancelled(oauth)) {
+        throw error;
+      }
+      if (directBearerRecoveryState.attempted) {
+        throw new MCPAuthenticationRejectedError(basic.serverName, false, error);
+      }
+      directBearerRecoveryState.attempted = true;
+      const refreshedConfig = await resolveDirectOpenIDBearerConfig({
+        config: directBearerSourceConfig,
+        upstreamTokenProvider: oauth?.upstreamTokenProvider,
+        forceRefresh: true,
+        signal: oauth?.signal,
+      });
+      directBearerRecoveryState.resolvedConfig = refreshedConfig;
+      try {
+        return await create({ ...basic, serverConfig: refreshedConfig });
+      } catch (refreshedError) {
+        if (isMCPTransportAuthenticationError(refreshedError)) {
+          throw new MCPAuthenticationRejectedError(basic.serverName, false, refreshedError);
+        }
+        throw refreshedError;
+      }
+    }
   }
 
   static attachRequestOAuthHandler(
@@ -146,20 +202,68 @@ export class MCPConnectionFactory {
   ): Promise<ToolDiscoveryResult> {
     /** Checked before credential preparation begins: a spent budget or an already-cancelled
      *  caller must not start Graph preprocessing or token resolution it cannot cancel. */
-    if (
-      (options?.deadlineMs != null && Date.now() >= options.deadlineMs) ||
-      options?.signal?.aborted === true
-    ) {
+    if (this.isRequestCancelled(options)) {
       logger.debug('[MCP] [Discovery] Cancelled or out of budget before discovery began');
       return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
     }
-    const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
-    if (options != null && 'useOAuth' in options) {
-      const factory = new this(preparedBasic, { ...options, returnOnOAuth: true });
+    const directBearerSourceConfig =
+      basic.directBearerSourceConfig ??
+      (usesDirectOpenIDBearerRecovery(basic.serverConfig)
+        ? (basic.serverConfig as t.ParsedServerConfig)
+        : undefined);
+    const discover = async (candidate: t.BasicConnectionOptions): Promise<ToolDiscoveryResult> => {
+      const prepared = await this.prepareBasicConnectionOptions(
+        { ...candidate, directBearerSourceConfig },
+        options,
+      );
+      if (options != null && 'useOAuth' in options) {
+        const factory = new this(prepared, { ...options, returnOnOAuth: true });
+        return factory.discoverToolsInternal();
+      }
+      const factory = new this(prepared, options);
       return factory.discoverToolsInternal();
+    };
+
+    const initial = await discover(basic);
+    if (!directBearerSourceConfig || !this.hasDiscoveryAuthenticationRejection(initial)) {
+      return initial;
     }
-    const factory = new this(preparedBasic, options);
-    return factory.discoverToolsInternal();
+
+    if (initial.connection) {
+      await initial.connection.dispose().catch(() => undefined);
+    }
+    if (this.isRequestCancelled(options)) {
+      return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
+    }
+    const refreshedConfig = await resolveDirectOpenIDBearerConfig({
+      config: directBearerSourceConfig,
+      upstreamTokenProvider: options?.upstreamTokenProvider,
+      forceRefresh: true,
+      signal: options?.signal,
+    });
+    const refreshed = await discover({ ...basic, serverConfig: refreshedConfig });
+    if (this.hasDiscoveryAuthenticationRejection(refreshed)) {
+      if (refreshed.connection) {
+        await refreshed.connection.dispose().catch(() => undefined);
+      }
+      throw new MCPAuthenticationRejectedError(
+        basic.serverName,
+        false,
+        refreshed.authenticationError,
+      );
+    }
+    return refreshed;
+  }
+
+  private static hasDiscoveryAuthenticationRejection(result: ToolDiscoveryResult): boolean {
+    return result.oauthRequired || result.authenticationError != null;
+  }
+
+  private static isRequestCancelled(options?: t.UserConnectionContext): boolean {
+    return (
+      options?.signal?.aborted === true ||
+      (options?.deadlineMs != null && Date.now() >= options.deadlineMs)
+    );
   }
 
   /**
@@ -171,19 +275,47 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<t.BasicConnectionOptions> {
+    const bearerConfig = await resolveDirectOpenIDBearerConfig({
+      config: basic.serverConfig,
+      upstreamTokenProvider: options?.upstreamTokenProvider,
+      signal: options?.signal,
+    });
+    if (basic.directBearerRecoveryState && usesDirectOpenIDBearerRecovery(basic.serverConfig)) {
+      basic.directBearerRecoveryState.resolvedConfig = bearerConfig;
+    }
+    const directBearerSourceConfig =
+      basic.directBearerSourceConfig ??
+      (usesDirectOpenIDBearerRecovery(basic.serverConfig)
+        ? (basic.serverConfig as t.ParsedServerConfig)
+        : undefined);
+    const preparedBasic =
+      bearerConfig === basic.serverConfig &&
+      directBearerSourceConfig === basic.directBearerSourceConfig
+        ? basic
+        : {
+            ...basic,
+            serverConfig: bearerConfig,
+            serverDefinition: basic.serverDefinition ?? basic.serverConfig,
+            directBearerSourceConfig,
+          };
+
     if (basic.dbSourced || !options?.graphTokenResolver) {
-      return basic;
+      return preparedBasic;
     }
 
-    const serverConfig = await preProcessGraphTokens(basic.serverConfig, {
+    const serverConfig = await preProcessGraphTokens(preparedBasic.serverConfig, {
       user: options.user,
       graphTokenResolver: options.graphTokenResolver,
       scopes: process.env.GRAPH_API_SCOPES,
     });
 
-    return serverConfig === basic.serverConfig
-      ? basic
-      : { ...basic, serverConfig, serverDefinition: basic.serverDefinition ?? basic.serverConfig };
+    return serverConfig === preparedBasic.serverConfig
+      ? preparedBasic
+      : {
+          ...preparedBasic,
+          serverConfig,
+          serverDefinition: preparedBasic.serverDefinition ?? basic.serverConfig,
+        };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
@@ -231,6 +363,7 @@ export class MCPConnectionFactory {
         useSSRFProtection: this.useSSRFProtection,
         allowedAddresses: this.allowedAddresses,
         ephemeralConnection: this.ephemeralConnection,
+        ...(this.directBearerRecoveryEnabled && { directBearerRecoveryEnabled: true }),
       });
 
       oauthHandler = () => {
@@ -256,6 +389,9 @@ export class MCPConnectionFactory {
             connection,
             oauthRequired: false,
             oauthUrl: null,
+            ...(snapshot.authenticationError != null && {
+              authenticationError: snapshot.authenticationError,
+            }),
           };
         }
       } catch {
@@ -434,6 +570,9 @@ export class MCPConnectionFactory {
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
     this.ephemeralConnection = basic.ephemeralConnection === true;
+    this.directBearerRecoveryEnabled = isDirectOpenIDBearerRecoveryEnabled(
+      basic.directBearerSourceConfig ?? basic.serverConfig,
+    );
     this.connectionTimeout = options?.connectionTimeout;
     this.deadlineMs = options?.deadlineMs;
     this.signal = options?.signal;
@@ -442,6 +581,7 @@ export class MCPConnectionFactory {
     this.logPrefix = options?.user ? `[MCP][User: ${options.user.id}]` : '[MCP]';
 
     this.user = options?.user;
+    this.upstreamTokenProvider = options?.upstreamTokenProvider;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
@@ -453,7 +593,6 @@ export class MCPConnectionFactory {
       this.returnOnOAuth = options.returnOnOAuth;
       this.oboTokenResolver = options.oboTokenResolver;
       this.oboTrustChecker = options.oboTrustChecker;
-      this.upstreamTokenProvider = options.upstreamTokenProvider;
       this.oboIdentityContext = options.oboIdentityContext;
     } else {
       this.useOAuth = false;
@@ -553,6 +692,9 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      ...(this.directBearerRecoveryEnabled && {
+        directBearerRecoveryEnabled: true,
+      }),
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
@@ -580,7 +722,7 @@ export class MCPConnectionFactory {
       await this.attemptToConnect(connection);
       this.connectionReady = true;
       // Keep the `oauthRequired` listener for cached-connection 401 recovery,
-      // but drop response/tool-call callbacks from the completed request.
+      // but drop request-bound callbacks and credentials from the completed request.
       this.releaseRequestScopedOAuthState();
       return connection;
     } catch (error) {
@@ -611,6 +753,7 @@ export class MCPConnectionFactory {
     this.oauthStart = undefined;
     this.oauthEnd = undefined;
     this.returnOnOAuth = false;
+    this.upstreamTokenProvider = undefined;
   }
 
   private getServerUrl(): string | undefined {
@@ -1516,6 +1659,7 @@ export class MCPConnectionFactory {
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
+    this.signal?.throwIfAborted();
     const baseTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
     // OAuth servers may pause mid-connect to wait for the user to authorize in the browser.
     // The transport connect itself is still bounded by initTimeout inside connection.connect(),
@@ -1530,6 +1674,17 @@ export class MCPConnectionFactory {
       ? Math.max(baseTimeout, oauthHandlingTimeout + 60000)
       : baseTimeout;
     const retryController = new AbortController();
+    const callerSignal = this.signal;
+    let onAbort: (() => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      if (callerSignal) {
+        onAbort = () => {
+          retryController.abort(callerSignal.reason);
+          reject(callerSignal.reason);
+        };
+        callerSignal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
     let timeoutId: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
@@ -1539,15 +1694,21 @@ export class MCPConnectionFactory {
     });
 
     try {
-      await Promise.race([this.connectTo(connection, retryController.signal), timeout]);
+      await Promise.race([this.connectTo(connection, retryController.signal), timeout, cancelled]);
     } finally {
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
       retryController.abort();
+      if (onAbort) {
+        callerSignal?.removeEventListener('abort', onAbort);
+      }
     }
 
-    if (await connection.isConnected()) return;
+    callerSignal?.throwIfAborted();
+    const connected = await connection.isConnected(callerSignal);
+    callerSignal?.throwIfAborted();
+    if (connected) return;
     logger.error(`${this.logPrefix} Failed to establish connection.`);
   }
 
@@ -1591,7 +1752,10 @@ export class MCPConnectionFactory {
           throw error;
         }
 
-        if (this.useOAuth && isOAuthAuthenticationError(error)) {
+        if (
+          (this.useOAuth || this.directBearerRecoveryEnabled) &&
+          isOAuthAuthenticationError(error)
+        ) {
           logger.info(`${this.logPrefix} OAuth required, stopping connection attempts`);
           throw error;
         }
