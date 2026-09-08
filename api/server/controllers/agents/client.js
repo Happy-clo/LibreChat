@@ -176,6 +176,7 @@ const {
   UsageEvents,
   Permissions,
   VisionModes,
+  ErrorTypes,
   ContentTypes,
   FileSources,
   ApprovalEvents,
@@ -318,19 +319,48 @@ function captureRunContextMeta(client) {
   });
 }
 
+/** Text of a summary content part; empty for anything else. */
+function getSummaryPartText(part) {
+  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+    return '';
+  }
+  return part.content
+    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * A compaction turn's response is its summary. The run emits no text, so a
+ * completion without a usable summary part means the summarizer produced
+ * nothing. A run that already recorded why (an error part, e.g. a skipped
+ * compaction) persists with that explanation; one that ended with neither
+ * fails as a typed error instead of persisting an empty assistant message.
+ * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
+ */
+function markCompactionSummary(contentParts) {
+  const summary = contentParts.find(
+    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
+  );
+  if (summary != null) {
+    summary.initiatedBy = 'user';
+    return;
+  }
+  if (contentParts.some((part) => part?.type === ContentTypes.ERROR)) {
+    return;
+  }
+  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
+    code: 'COMPACTION_FAILED',
+  });
+}
+
 function getLatestEventActorSummary(contentParts) {
   if (!Array.isArray(contentParts)) {
     return undefined;
   }
   for (let index = contentParts.length - 1; index >= 0; index -= 1) {
     const part = contentParts[index];
-    if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-      continue;
-    }
-    const text = part.content
-      .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-      .join('')
-      .trim();
+    const text = getSummaryPartText(part);
     if (text.length === 0) {
       continue;
     }
@@ -349,6 +379,10 @@ function getLatestEventActorSummary(contentParts) {
  * still reaches the logs through `getSafeErrorMetadata`.
  */
 function getUserFacingRequestError(baseMessage, error, appConfig) {
+  /** Carries no model or user content, so it is safe under every filter. */
+  if (error?.name === 'ManualSummarizationSkippedError') {
+    return JSON.stringify({ type: ErrorTypes.COMPACTION_SKIPPED, reason: error.reason });
+  }
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
     appConfig?.messageFilter?.pii,
@@ -3502,8 +3536,16 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
+    if (this.isCompactionTurn()) {
+      markCompactionSummary(completion);
+    }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
+  }
+
+  /** A manual compaction runs the graph summarize-only: the summary is the response. */
+  isCompactionTurn() {
+    return this.options?.req?.body?.compact === true;
   }
 
   /**
@@ -4466,8 +4508,16 @@ class AgentClient extends BaseClient {
        * synthetic prefix. Names NOT primed this turn still reconstruct from
        * history, preserving sticky manual re-priming across turns.
        */
-      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      /** A compaction summarizes what was already said. No user turn was
+       *  submitted, so it primes no skills into the transcript it is about
+       *  to summarize and runs no memory pass over it. */
+      const isCompactionTurn = this.isCompactionTurn();
+      const manualSkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.alwaysApplySkillPrimes;
       const freshSkillPrimeNames = collectFreshSkillPrimeNames({
         manualSkillPrimes,
         alwaysApplySkillPrimes,
@@ -4602,7 +4652,7 @@ class AgentClient extends BaseClient {
       });
 
       const memoryMessages =
-        this.processMemory && this.memoryPayload
+        this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
               stripActivityLabelParts(this.memoryPayload),
               undefined,
@@ -4661,7 +4711,7 @@ class AgentClient extends BaseClient {
         //   messages = addCacheControl(messages);
         // }
 
-        if (this.processMemory) {
+        if (this.processMemory && !isCompactionTurn) {
           memoryPromise = this.runMemory(memoryMessages);
         }
 
@@ -4787,6 +4837,7 @@ class AgentClient extends BaseClient {
           traceContext: buildTraceContext(this.options),
           tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
+          summarizeOnly: this.isCompactionTurn(),
           appConfig,
           tokenCounter,
           /** Bills subagent child-run model calls — foreground usage joins

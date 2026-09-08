@@ -408,3 +408,105 @@ describe('useChatFunctions ask attachments', () => {
     expect(isPasteSubmitted('queued-override-temp-file')).toBe(true);
   });
 });
+
+describe('useChatFunctions ask compaction', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetQueryData.mockReturnValue({});
+  });
+
+  it('submits a summarize-only turn hung off the leaf without a new user bubble', () => {
+    const messages = [userMessage('u1'), assistantMessage('a1', 'u1')];
+    const { result, setMessages, setSubmission } = renderAsk(messages);
+
+    act(() => {
+      result.current.ask(
+        { text: '', conversationId: 'conversation-1', messageId: 'a1', parentMessageId: 'u1' },
+        { compact: true },
+      );
+    });
+
+    expect(setSubmission).toHaveBeenCalledTimes(1);
+    const submission = setSubmission.mock.calls[0][0] as TSubmission;
+    expect(submission.compact).toBe(true);
+    expect(submission.isRegenerate).toBe(true);
+    expect(submission.initialResponse?.parentMessageId).toBe('a1');
+    expect(submission.initialResponse?.messageId).toBe('a1_');
+    /** The leaf stands in for the user message so an error lands under it. */
+    expect(submission.userMessage.messageId).toBe('a1');
+    expect(submission.userMessage.overrideParentMessageId).toBeNull();
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.messages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+    expect(submission.regenerateMessages?.map((message) => message.messageId)).toEqual([
+      'u1',
+      'a1',
+    ]);
+
+    const rendered = setMessages.mock.calls[0][0] as TMessage[];
+    expect(rendered.map((message) => message.messageId)).toEqual(['u1', 'a1', 'a1_']);
+  });
+
+  it('does not re-attach the leaf files a user-message leaf carries', () => {
+    const leaf = { ...userMessage('u2', 'a1'), files: [{ file_id: 'f1' }] } as TMessage;
+    const messages = [userMessage('u1'), assistantMessage('a1', 'u1'), leaf];
+    const { result, setSubmission } = renderAsk(messages);
+
+    act(() => {
+      result.current.ask(
+        { text: '', conversationId: 'conversation-1', messageId: 'u2', parentMessageId: 'a1' },
+        { compact: true },
+      );
+    });
+
+    const submission = setSubmission.mock.calls[0][0] as TSubmission;
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.initialResponse?.parentMessageId).toBe('u2');
+  });
+});
+
+describe('useChatFunctions ask compaction and the composer', () => {
+  it('leaves files staged in the composer untouched', () => {
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map([
+      [
+        'staged-file',
+        {
+          file_id: 'staged-file',
+          filepath: '/uploads/staged-file',
+          filename: 'next-message.pdf',
+          type: 'application/pdf',
+        },
+      ],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+    const messages = [userMessage('u1'), assistantMessage('a1', 'u1')];
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: messages[1],
+        conversation: conversation('conversation-1'),
+        getMessages: () => messages,
+        setMessages,
+        setSubmission,
+        files,
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask(
+        { text: '', conversationId: 'conversation-1', messageId: 'a1', parentMessageId: 'a1' },
+        { compact: true },
+      );
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.compact).toBe(true);
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.userMessage.parentMessageId).toBe('a1');
+    expect(setFiles).not.toHaveBeenCalled();
+    expect(isPasteSubmitted('staged-file')).toBe(false);
+  });
+});
