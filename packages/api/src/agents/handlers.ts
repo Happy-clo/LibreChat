@@ -17,9 +17,9 @@ import type {
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
 } from '@librechat/agents';
+import type { BackgroundToolResultClaim, ValidationIssue } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
-import type { ValidationIssue } from '@librechat/data-schemas';
 import type {
   WorkspaceEditResult,
   WorkspacePreviewEditResult,
@@ -283,15 +283,14 @@ export interface ToolExecuteOptions {
     claim: (params: {
       userId: string;
       conversationId: string;
-      messageId: string;
+      messageId?: string;
       taskId: string;
       agentId?: string;
       kind: 'manual';
       claimId: string;
-    }) => Promise<
-      | { status: 'acquired' | 'not_found' | 'not_ready' }
-      | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
-    >;
+      generationId?: string;
+      allowUnfinished?: boolean;
+    }) => Promise<BackgroundToolResultClaim>;
     recoverDeadClaim?: BackgroundToolDeadClaimRecovery;
   };
   /** Emits an `attachment` SSE event on the current request's live stream. */
@@ -5519,6 +5518,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               kind: current.resultClaim.kind,
                               claimId: current.resultClaim.claimId,
                               claimedAt: new Date(current.resultClaim.claimedAt),
+                              ...(current.resultClaim.generationId == null
+                                ? {}
+                                : { generationId: current.resultClaim.generationId }),
                             },
                           }
                         : {}),
@@ -5553,6 +5555,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         certainty === 'ambiguous' ? { onlyIfUnclaimed: true } : undefined,
                       );
                       if (!retired) {
+                        const current = backgroundTaskRegistry.get(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                        );
+                        /** A prior manual poll may already have durably retired
+                         * this exact unclaimed delivery. In that case there is
+                         * no automatic consumer left to race the process-local
+                         * fallback, even though a second retirement is a no-op. */
+                        if (current?.completionWakeupRetired === true) {
+                          backgroundTaskRegistry.markCompletionPersistenceFailed(
+                            backgroundUserId,
+                            backgroundConversationId,
+                            task.id,
+                          );
+                          return;
+                        }
                         logger.warn(
                           `[background] Could not retire failed completion delivery for task ${task.id}.`,
                         );
@@ -6071,6 +6090,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     toolCallId: tc.id,
                     agentId,
                     runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+                    generationId: backgroundRunId,
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
                     recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
