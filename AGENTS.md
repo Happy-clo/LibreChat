@@ -13,8 +13,9 @@ default branch, so close linked issues by hand. Worktrees share one stash stack,
 Write the description for a reader who has not followed the branch: what breaks, what triggers it,
 how it behaves after the change, then one or two views of the mechanism — a focused diff, a call
 tree, a shallow file tree, or a Mermaid sequence. Keep only what the change carries, and describe
-the code as it stands rather than narrating earlier commits or review rounds. The formats and
-examples live in `.github/pull_request_template.md`.
+the code as it stands rather than narrating earlier commits or review rounds. Naming the merged
+pull request that caused the bug is not the same thing; that is history the reader needs. The
+formats and examples live in `.github/pull_request_template.md`.
 
 ## Review and completion
 
@@ -46,6 +47,28 @@ with `tsdown`, which emits without checking types. Run `npx tsc --noEmit` in the
 changed. `packages/client` excludes `*.spec.ts(x)` and `*.test.ts(x)` from typechecking entirely.
 `npm run sort-imports` with no arguments rewrites every source root — pass the paths you touched. See
 `CLAUDE.md` under "Typechecking" and "Formatting".
+
+## Module boundaries and configuration
+
+Database contracts belong to `packages/data-schemas`. Keep Mongoose types (`FilterQuery`,
+`Types.ObjectId`, `Document`) out of exported signatures in `packages/api`, `packages/data-provider`
+and `client`, because they make the storage engine part of that module's public API. Take and return
+plain typed objects and express the query behind a data-schemas method. The boundary already leaks
+across `packages/api`, so stop widening it rather than rewriting what exists; the client carries none
+of it and must stay that way.
+
+New levers ship configurable: a limit, timeout, toggle or capability introduced in code earns a field
+on `configSchema` (`packages/data-provider/src/config.ts`) so it can be set in `librechat.yaml`, with
+a default that reproduces today's behavior. Hard-coded constants and env-only switches need a reason.
+Modules take their dependencies rather than reaching for them: code in `packages/api` receives its
+config, database methods and clients from the caller, the way `createModels(mongoose)` receives the
+app's connection, instead of importing app singletons or reading global state. Integrations (provider
+SDKs, storage backends, vector stores, OAuth servers) arrive through an interface the caller
+supplies, so a second implementation is a new argument instead of a new branch. The static singletons
+under `packages/api/src/mcp` are the shape to stop extending, not a pattern to copy. This is the
+backend half of client state ownership: pass it in, do not reach for it.
+
+See `CLAUDE.md` under "Workspace Boundaries".
 
 ## Frontend theming and styling
 

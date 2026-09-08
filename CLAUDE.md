@@ -25,6 +25,29 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 - Database-specific shared logic goes in `/packages/data-schemas`.
 - Frontend/backend shared API logic (endpoints, types, data-service) goes in `/packages/data-provider`.
 - Build data-provider from project root: `npm run build:data-provider`.
+- **Database contracts stay inside `/packages/data-schemas`.** A Mongoose type in an exported
+  signature — `FilterQuery`, `Types.ObjectId`, `Document`, `HydratedDocument` — makes the storage
+  engine part of that module's public API, and every consumer then depends on Mongo instead of on
+  the data it needs. Take and return plain typed objects, and express the query behind a
+  data-schemas method. The boundary already leaks across dozens of files in `/packages/api`, so the
+  rule is to stop widening it rather than to rewrite what exists; `/client` carries none of it and
+  must stay that way.
+- **New levers ship configurable.** A limit, timeout, toggle or capability introduced in code earns
+  a field on `configSchema` (`packages/data-provider/src/config.ts`) so an operator can set it in
+  `librechat.yaml`, with a default that reproduces today's behavior. Hard-coded constants and
+  env-only switches need a reason. The schema is also what keeps one definition of the value instead
+  of a constant, a fallback and a doc line that drift apart.
+- **A backend module takes its dependencies, it does not reach for them.** Code in `/packages/api`
+  should receive its config, database methods and clients from the caller the way
+  `createModels(mongoose)` receives the app's connection, rather than importing app singletons or
+  reading global state. A module the caller constructs can be tested without a running app and moved
+  to another workspace without a rewrite; one that calls `getInstance()` can do neither. This is the
+  backend half of "Client State Ownership" — pass it in, do not reach for it. The static singletons
+  under `packages/api/src/mcp` are the shape to stop extending, not a pattern to copy.
+- **Integrations arrive through an interface the caller supplies.** A provider SDK, storage backend,
+  vector store or OAuth server is injected, so a second implementation is a new argument instead of
+  a new branch in shared code, and a test can exercise the real logic against a substitute at the
+  boundary rather than mocking the module that holds it.
 
 ---
 
@@ -98,7 +121,9 @@ findings that keep arriving mean the subsystem needs a sweep, not another patch.
   ARIA intact, and compose shared primitives and semantic theme roles before adding local styling
   (see "Frontend Rules"). Custom styling that proves unavoidable still supports light/dark and
   reduced motion.
-- Preserve existing defaults, configuration compatibility, stored data, and mixed-version behavior.
+- Preserve existing defaults, configuration compatibility, stored data, and mixed-version behavior,
+  and expose any new lever through `configSchema` rather than a constant (see "Workspace
+  Boundaries").
 - Make the fix the smallest one consistent with the patterns already in the file, and test the
   behavior that was missed rather than the line a reviewer pointed at.
 - **Report what you actually ran**: the pushed head, the local checks from "Testing" and
